@@ -1,4 +1,5 @@
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
+import fs from 'node:fs';
 import path from 'node:path';
 
 /**
@@ -8,8 +9,6 @@ import path from 'node:path';
  * importing them into a persistent database. geolocation and sellers are
  * intentionally omitted for now.
  */
-const DATA_DIR = path.join(process.cwd(), 'data');
-
 export const TABLES = {
   orders: 'olist_orders_dataset.csv',
   order_items: 'olist_order_items_dataset.csv',
@@ -21,6 +20,16 @@ export const TABLES = {
 } as const;
 
 export type TableName = keyof typeof TABLES;
+
+/**
+ * The full ~120MB dataset lives in `data/` (gitignored — for local dev). A small
+ * referentially-consistent sample lives in `data/sample/` (committed) so a
+ * deployment has data. Prefer the full set when present, else the sample.
+ * Regenerate the sample from the full CSVs with `npm run build:sample`.
+ */
+const FULL_DIR = path.join(process.cwd(), 'data');
+const SAMPLE_DIR = path.join(FULL_DIR, 'sample');
+const DATA_DIR = fs.existsSync(path.join(FULL_DIR, TABLES.orders)) ? FULL_DIR : SAMPLE_DIR;
 
 /** Absolute path to a table's CSV. */
 export function csvPath(table: TableName): string {

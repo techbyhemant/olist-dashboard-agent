@@ -13,9 +13,11 @@ import { SAMPLE_SPEC } from '@/lib/sampleSpec';
  * return rows whose columns match what the widget declares. Plus an end-to-end
  * check that the retry loop self-corrects, driven by the deterministic mock.
  */
-// The full Olist CSVs are gitignored (too large for the repo). Skip the
-// data-backed layer gracefully when they aren't present (e.g. fresh CI clone).
-const DATA_READY = fs.existsSync(path.join(process.cwd(), 'data', 'olist_orders_dataset.csv'));
+// Runs against the full CSVs locally, or the committed sample (data/sample/) in
+// CI — matching lib/db.ts's fallback. Skips only if neither is present.
+const DATA_READY =
+  fs.existsSync(path.join(process.cwd(), 'data', 'olist_orders_dataset.csv')) ||
+  fs.existsSync(path.join(process.cwd(), 'data', 'sample', 'olist_orders_dataset.csv'));
 
 describe.skipIf(!DATA_READY)('Layer 2 — spec correctness against real data', () => {
   it('every SAMPLE_SPEC widget runs and returns correctly-shaped data', async () => {

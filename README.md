@@ -97,16 +97,20 @@ scripts/explore.ts         data exploration → scripts/exploration.md
 ### Run it
 
 ```bash
+npm run build:sample     # regenerate data/sample/ from the full CSVs (committed)
 npm run explore          # regenerate scripts/exploration.md from the CSVs
-npm run dev              # http://localhost:3000
-npm test                 # vitest: the loop eval (uses MOCK_LLM, no spend)
+npm run dev              # http://localhost:3051
+npm test                 # vitest: schema + DuckDB loop evals (MOCK_LLM, no spend)
 ```
 
-Auth: the route uses the Claude Agent SDK (Claude Code's auth). To run on a Pro/Max
-subscription, set `CLAUDE_CODE_OAUTH_TOKEN` and leave `ANTHROPIC_API_KEY` **unset**
-(the API key takes precedence). See `.env.local.example`. Note: reusing a
-subscription credential to power a custom app is outside Anthropic's intended use
-for that token — fine for local dev, not something to ship on.
+Auth: the route calls the Anthropic Messages API (`@anthropic-ai/sdk`). Set a
+Console API key in `.env.local` (`ANTHROPIC_API_KEY=sk-ant-...`); see
+`.env.local.example`. `MOCK_LLM=1` runs the whole pipeline with no model call / no spend.
+
+Data: the full ~120MB Olist CSVs (gitignored) go in `data/` for local dev; a small
+referentially-consistent sample lives in `data/sample/` (committed) so deployments
+and CI have data. `lib/db.ts` uses the full set when present, else the sample;
+`npm run build:sample` regenerates the sample.
 
 ## 3. Eval strategy
 
@@ -120,7 +124,7 @@ Three layers, cheapest-first, wired into CI (`.github/workflows/ci.yml`):
 - **Layer 2 — spec correctness** (`evals/correctness.test.ts`, deterministic, real
   DuckDB). Every widget's SQL must run and return rows whose columns match what the
   widget declares; plus an end-to-end check that the loop self-corrects (driven by
-  the mock). Self-skips when the dataset isn't present.
+  the mock). Runs against the full CSVs locally or the committed sample in CI.
 - **Layer 3 — LLM-as-judge** (`evals/judge.test.ts`, real model, **gated**). For each
   golden question the model generates a dashboard and a second model call scores how
   well it answers (1–5). Off by default — run with `RUN_LLM_EVALS=1 npm test` — so CI
@@ -151,9 +155,9 @@ retry:
 - grid/layout positioning (v1 is a vertical stack)
 - donut & combo charts; nested tables
 - multi-step tool routing; streaming responses
-- structured-output enforcement via the Agent SDK's `outputFormat` (currently we
-  parse text and let the retry loop catch malformed JSON)
+- structured-output enforcement (unsupported on the current `claude-sonnet-4-6`
+  default; we parse text and let the retry loop catch malformed JSON)
 - a constrained tool / semantic-metrics layer as a safer alternative to generated
   SQL (see the design note above)
 - richer eval coverage: retry-efficacy metrics (first-try vs after-retry success by
-  failure class), contract fuzzing, a committed sample dataset so Layer 2 runs in CI
+  failure class), contract fuzzing

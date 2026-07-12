@@ -8,6 +8,7 @@
     "start": "next start -p 3051",
     "lint": "eslint",
     "explore": "node scripts/explore.ts",
+    "build:sample": "node scripts/build-sample.ts",
     "test": "vitest run"
   },
   "dependencies": {
