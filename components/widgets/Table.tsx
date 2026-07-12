@@ -1,4 +1,19 @@
-import { formatValue, humanize } from '@/lib/format';
+import {
+  formatValue,
+  formatMoney,
+  humanize,
+  humanizeValue,
+  isMoneyLabel,
+} from '@/lib/format';
+
+/** Money columns get "R$"; other strings get humanized; numbers get locale commas. */
+function formatCell(column: string, v: unknown): string {
+  if (typeof v === 'number') {
+    return isMoneyLabel(column) ? formatMoney(v) : formatValue(v);
+  }
+  if (typeof v === 'string') return humanizeValue(v);
+  return formatValue(v);
+}
 
 export function Table({
   title,
@@ -28,7 +43,7 @@ export function Table({
               <tr key={i} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50">
                 {columns.map((c) => (
                   <td key={c} className="px-3 py-2 text-zinc-800 tabular-nums">
-                    {formatValue(row[c])}
+                    {formatCell(c, row[c])}
                   </td>
                 ))}
               </tr>

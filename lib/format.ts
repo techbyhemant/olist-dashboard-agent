@@ -30,6 +30,53 @@ export function humanize(key: string): string {
     .join(' ');
 }
 
+/**
+ * Does a metric/column/title refer to a money amount? Olist amounts are BRL.
+ * Excludes counting/score-ish labels that merely mention a money word
+ * (e.g. "payment_count").
+ */
+const MONEY_RE = /revenue|price|freight|payment|sales|gmv|spend|amount/i;
+const NOT_MONEY_RE = /count|qty|score|pct|percent|%|rate|days|num/i;
+export function isMoneyLabel(label: string): boolean {
+  return MONEY_RE.test(label) && !NOT_MONEY_RE.test(label);
+}
+
+/** "R$ 13,221,498.11" — full-precision BRL for tiles and table cells. */
+export function formatMoney(v: unknown): string {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return formatValue(v);
+  return (
+    'R$ ' +
+    v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  );
+}
+
+/** Compact axis numbers: 1400000 -> "1.4M". */
+export function formatCompact(n: number): string {
+  return new Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(n);
+}
+
+/**
+ * Humanize a *data value* for display (axis ticks, tooltip labels, table cells).
+ * Only touches lowercase tokens — snake_case ("health_beauty" -> "Health Beauty")
+ * and plain lowercase words/phrases ("sao paulo" -> "Sao Paulo"). Dates, codes
+ * ("SP"), and mixed-case values pass through untouched.
+ */
+export function humanizeValue(v: unknown): string {
+  if (v === null || v === undefined) return '—';
+  if (typeof v !== 'string') return String(v);
+  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(v)) return humanize(v);
+  if (/^[a-z][a-z ]*$/.test(v)) {
+    return v
+      .split(' ')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+  return v;
+}
+
 /** Display formatting shared by widgets. Pure + testable. */
 export function formatValue(v: unknown): string {
   if (v === null || v === undefined) return '—';

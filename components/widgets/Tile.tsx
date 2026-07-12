@@ -1,5 +1,5 @@
 import type { TileData } from '@/lib/run';
-import { formatValue } from '@/lib/format';
+import { formatValue, formatMoney, isMoneyLabel } from '@/lib/format';
 
 function DeltaArrow({ delta }: { delta: NonNullable<TileData['delta']> }) {
   const n = typeof delta.value === 'number' ? delta.value : Number(delta.value);
@@ -22,7 +22,7 @@ export function Tile({ title, data }: { title: string; data: TileData }) {
     <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="text-sm font-medium text-zinc-500">{title}</div>
       <div className="mt-1 text-3xl font-semibold tracking-tight text-zinc-900 tabular-nums">
-        {formatValue(data.value)}
+        {isMoneyLabel(title) ? formatMoney(data.value) : formatValue(data.value)}
       </div>
       {data.delta && <DeltaArrow delta={data.delta} />}
     </div>
