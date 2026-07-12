@@ -112,6 +112,13 @@ referentially-consistent sample lives in `data/sample/` (committed) so deploymen
 and CI have data. `lib/db.ts` uses the full set when present, else the sample;
 `npm run build:sample` regenerates the sample.
 
+Deploying (Vercel): runs as-is on the Node runtime — set `ANTHROPIC_API_KEY` and
+deploy. Since a public demo calls the model per request, the route is rate-limited
+(`RATE_LIMIT_PER_MIN` per IP + `DAILY_REQUEST_CAP` global, in `lib/rateLimit.ts`).
+Those are best-effort in-memory; set a **monthly budget limit on the API key in the
+Anthropic Console** as the hard spend ceiling. Or deploy with `MOCK_LLM=1` for a
+zero-spend demo.
+
 ## 3. Eval strategy
 
 The loop is the thing worth testing, so the evals target it — not the rendering.

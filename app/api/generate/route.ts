@@ -1,4 +1,5 @@
 import { streamDashboard, type StreamEvent } from '@/lib/generateDashboard';
+import { checkRateLimit, clientIp } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs'; // DuckDB native addon + Agent SDK subprocess
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,19 @@ export async function POST(request: Request) {
       { ok: false, error: 'Provide a non-empty "question" string.' },
       { status: 400 },
     );
+  }
+
+  // Rate limit before spending anything on the model. Skipped under MOCK_LLM
+  // (no spend to protect, keeps local/mock runs frictionless).
+  const isMock = process.env.MOCK_LLM === '1' || process.env.MOCK_LLM === 'true';
+  if (!isMock) {
+    const limit = checkRateLimit(clientIp(request));
+    if (!limit.ok) {
+      return Response.json(
+        { ok: false, error: limit.error },
+        { status: 429, headers: { 'retry-after': String(limit.retryAfter) } },
+      );
+    }
   }
 
   const encoder = new TextEncoder();
