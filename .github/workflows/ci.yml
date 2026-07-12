@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npx tsc --noEmit
+      # Deterministic evals: Layer 1 (schema + SQL safety) always runs.
+      # Layer 2 (DuckDB) self-skips without the dataset; Layer 3 (LLM judge) is
+      # gated behind RUN_LLM_EVALS and stays off in CI (no spend, deterministic).
+      - name: Tests
+        run: npm test
