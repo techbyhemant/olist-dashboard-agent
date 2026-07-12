@@ -10,10 +10,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['evals/**/*.test.ts'],
-    // Native addon + Agent SDK must not be bundled/transformed by Vite.
+    // DuckDB's native addon must not be bundled/transformed by Vite.
     server: {
       deps: {
-        external: [/@duckdb/, /@anthropic-ai\/claude-agent-sdk/],
+        external: [/@duckdb/],
       },
     },
   },

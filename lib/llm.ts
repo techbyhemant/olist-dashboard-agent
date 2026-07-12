@@ -1,5 +1,4 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import os from 'node:os';
+import Anthropic from '@anthropic-ai/sdk';
 import { buildSystemPrompt, buildUserPrompt, buildRetryPrompt } from './prompt';
 
 /**
@@ -10,8 +9,9 @@ import { buildSystemPrompt, buildUserPrompt, buildRetryPrompt } from './prompt';
  * Selection:
  *   MOCK_LLM=1            -> deterministic mock (used by evals; also lets the whole
  *                           loop run with no credentials).
- *   otherwise            -> Claude Agent SDK (uses Claude Code auth, i.e. your
- *                           CLAUDE_CODE_OAUTH_TOKEN when ANTHROPIC_API_KEY is unset).
+ *   otherwise            -> Anthropic Messages API (@anthropic-ai/sdk), authenticated
+ *                           with ANTHROPIC_API_KEY. No subprocess, so it deploys on
+ *                           serverless (Vercel) unlike the Claude Agent SDK.
  */
 export interface GenInput {
   question: string;
@@ -25,60 +25,48 @@ export interface SpecGenerator {
 }
 
 const DEFAULT_MODEL = process.env.DASHBOARD_MODEL ?? 'claude-sonnet-4-6';
+const MAX_TOKENS = 8192;
 
-class AgentSdkGenerator implements SpecGenerator {
-  readonly name = 'agent-sdk';
+class MessagesApiGenerator implements SpecGenerator {
+  readonly name = 'messages-api';
 
   private preflight() {
-    const oauth = process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim();
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-    if (oauth === 'paste-your-token-here') {
+    if (!apiKey || apiKey === 'paste-your-key-here') {
       throw new Error(
-        'CLAUDE_CODE_OAUTH_TOKEN in .env.local is still the placeholder — paste your real token.',
-      );
-    }
-    if (!oauth && !apiKey) {
-      throw new Error(
-        'No credentials found. Set CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY) in .env.local, or use MOCK_LLM=1.',
-      );
-    }
-    if (oauth && apiKey) {
-      // Not fatal, but ANTHROPIC_API_KEY wins, so the OAuth token would be ignored.
-      console.warn(
-        '[llm] Both ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are set; the API key takes precedence.',
+        'ANTHROPIC_API_KEY is missing or still the placeholder — set a Console API key in .env.local, or use MOCK_LLM=1.',
       );
     }
   }
 
   async generate({ question, priorError }: GenInput): Promise<string> {
     this.preflight();
+    // Constructed after preflight so a missing key yields the message above,
+    // not the SDK's generic "could not resolve authentication method".
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
     const userPrompt = priorError
       ? buildRetryPrompt(question, priorError)
       : buildUserPrompt(question);
 
-    let resultText = '';
-    for await (const message of query({
-      prompt: userPrompt,
-      options: {
-        model: DEFAULT_MODEL,
-        systemPrompt: buildSystemPrompt(), // replaces the coding-agent system prompt
-        allowedTools: [], // pure inference — no file/bash/tool access
-        maxTurns: 1,
-        settingSources: [], // ignore project CLAUDE.md / settings for determinism
-        cwd: os.tmpdir(), // don't write session files into the repo
-      },
-    })) {
-      if (message.type === 'result') {
-        if (message.subtype === 'success') {
-          resultText = message.result;
-        } else {
-          throw new Error(
-            `Agent SDK returned ${message.subtype}: ${message.errors?.join('; ') ?? 'unknown error'}`,
-          );
-        }
-      }
-    }
-    if (!resultText.trim()) throw new Error('Agent SDK returned empty result');
+    // Single-turn inference. No tools, no thinking: the model returns a JSON
+    // spec as text, which the pipeline parses + validates (Zod) + retries. The
+    // retry loop is why we don't need structured outputs (unsupported on
+    // Sonnet 4.6 anyway).
+    const message = await client.messages.create({
+      model: DEFAULT_MODEL,
+      max_tokens: MAX_TOKENS,
+      thinking: { type: 'disabled' },
+      system: buildSystemPrompt(),
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    const resultText = message.content
+      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+      .map((block) => block.text)
+      .join('');
+
+    if (!resultText.trim()) throw new Error('Messages API returned no text content');
     return resultText;
   }
 }
@@ -144,5 +132,5 @@ export function getGenerator(): SpecGenerator {
   if (process.env.MOCK_LLM === '1' || process.env.MOCK_LLM === 'true') {
     return new MockGenerator();
   }
-  return new AgentSdkGenerator();
+  return new MessagesApiGenerator();
 }

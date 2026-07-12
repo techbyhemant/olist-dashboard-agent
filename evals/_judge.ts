@@ -1,5 +1,4 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import os from 'node:os';
+import Anthropic from '@anthropic-ai/sdk';
 import type { DashboardSpec } from '@/lib/spec';
 
 /**
@@ -21,20 +20,19 @@ of widgets/metrics to the question, not styling. Return ONLY JSON:
 export async function judgeSpec(question: string, spec: DashboardSpec): Promise<Judgement> {
   const prompt = `Question: ${question}\n\nSpec:\n${JSON.stringify(spec, null, 2)}\n\nReturn the JSON judgement.`;
 
-  let text = '';
-  for await (const message of query({
-    prompt,
-    options: {
-      model: process.env.DASHBOARD_MODEL ?? 'claude-sonnet-4-6',
-      systemPrompt: JUDGE_SYSTEM,
-      allowedTools: [],
-      maxTurns: 1,
-      settingSources: [],
-      cwd: os.tmpdir(),
-    },
-  })) {
-    if (message.type === 'result' && message.subtype === 'success') text = message.result;
-  }
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const message = await client.messages.create({
+    model: process.env.DASHBOARD_MODEL ?? 'claude-sonnet-4-6',
+    max_tokens: 1024,
+    thinking: { type: 'disabled' },
+    system: JUDGE_SYSTEM,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const text = message.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
 
   const fence = text.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   const parsed = JSON.parse(fence ? fence[1] : text);

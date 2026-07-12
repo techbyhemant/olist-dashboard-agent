@@ -75,9 +75,9 @@ A typical run when the model first slips:
 - **Next.js 16 (App Router) + TypeScript strict**, Tailwind v4, Recharts v3.
 - **`@duckdb/node-api`** queries the CSVs in `/data` in place (no import step).
   Marked in `serverExternalPackages` so its native addon isn't bundled.
-- **LLM via `@anthropic-ai/claude-agent-sdk`** behind a provider boundary
-  (`lib/llm.ts`), so the loop is provider-agnostic and testable. A `MOCK_LLM=1`
-  stub runs the entire pipeline with no model call / no spend.
+- **LLM via the Anthropic Messages API (`@anthropic-ai/sdk`)** behind a provider
+  boundary (`lib/llm.ts`), so the loop is provider-agnostic and testable. A
+  `MOCK_LLM=1` stub runs the entire pipeline with no model call / no spend.
 
 ```
 lib/db.ts                  CSV-backed DuckDB query()
@@ -85,7 +85,7 @@ lib/spec.ts                Zod DashboardSpec contract + validateSpec()
 lib/sql-safety.ts          read-only-SELECT enforcement for model SQL
 lib/run.ts                 execute each widget's SQL, validate shape
 lib/prompt.ts              system prompt (schema summary + contract) + retry prompt
-lib/llm.ts                 Agent SDK generator + deterministic mock
+lib/llm.ts                 Messages API generator + deterministic mock
 lib/generateDashboard.ts   the generate→validate→run→retry loop
 app/api/generate/route.ts  POST { question } → { ok, spec, data, log, attempts }
 components/widgets/*        Tile, TileGroup, Chart, Table
