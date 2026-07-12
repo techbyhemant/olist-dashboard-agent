@@ -41,11 +41,15 @@ export function isMoneyLabel(label: string): boolean {
   return MONEY_RE.test(label) && !NOT_MONEY_RE.test(label);
 }
 
-/** "R$ 13,221,498.11" — full-precision BRL for tiles and table cells. */
+/**
+ * "$ 13,221,498.11" for tiles and table cells. Display-only choice: the
+ * underlying amounts are Brazilian Real (Olist is BRL e-commerce data), shown
+ * with a plain "$" prefix rather than "R$" for a more universal glance-read.
+ */
 export function formatMoney(v: unknown): string {
   if (typeof v !== 'number' || !Number.isFinite(v)) return formatValue(v);
   return (
-    'R$ ' +
+    '$ ' +
     v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   );
 }

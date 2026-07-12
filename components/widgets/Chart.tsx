@@ -36,9 +36,9 @@ export function Chart({
   series: string[];
   rows: Record<string, unknown>[];
 }) {
-  // BRL prefix on the axis only when every series is a money metric.
+  // "$" prefix on the axis only when every series is a money metric.
   const money = series.length > 0 && series.every((s) => isMoneyLabel(s));
-  const yTick = (n: number) => (money ? `R$ ${formatCompact(n)}` : formatCompact(n));
+  const yTick = (n: number) => (money ? `$ ${formatCompact(n)}` : formatCompact(n));
   const tooltipValue = (value: unknown, name: unknown, entry: { dataKey?: unknown }) => {
     const key = String(entry?.dataKey ?? '');
     const text =
