@@ -72,7 +72,7 @@ What that buys:
   never carries SQL. The widgets are converted into a typed spec and checked
   against the Zod contract in `lib/spec.ts`.
 - **Every query is run before rendering.** Each widget's SQL runs via DuckDB
-  (`lib/db.ts`, reading the CSVs in place with `read_csv_auto`), and `lib/run.ts`
+  (`lib/db.ts`, reading the committed Parquet files with `read_parquet`), and `lib/run.ts`
   confirms it returns rows whose columns match the widget's `metric`, `x`,
   `series` or `columns`. A widget that names a column its SQL doesn't produce is
   caught here, not in the browser.
@@ -111,14 +111,14 @@ did"**, so the self-correction is visible. A typical run when the model first sl
 ### Stack & layout
 
 - **Next.js 16 (App Router) + TypeScript strict**, Tailwind v4, Recharts v3.
-- **`@duckdb/node-api`** queries the CSVs in `/data` in place (no import step).
-  Marked in `serverExternalPackages` so its native addon isn't bundled.
+- **`@duckdb/node-api`** queries the Parquet files in `data/parquet/` in place (no
+  database server). Marked in `serverExternalPackages` so its native addon isn't bundled.
 - **LLM via the Anthropic Messages API (`@anthropic-ai/sdk`)** behind a provider
   boundary (`lib/llm.ts`), so the loop is provider-agnostic and testable. A
   `MOCK_LLM=1` stub runs the entire pipeline with no model call and no spend.
 
 ```
-lib/db.ts                  CSV-backed DuckDB query()
+lib/db.ts                  Parquet-backed DuckDB query()
 lib/layout.ts              tag allow-list, html → widgets + layout tree
 lib/spec.ts                Zod widget contract + validateSpec()
 lib/sql-safety.ts          read-only-SELECT enforcement for model SQL
@@ -136,7 +136,7 @@ scripts/explore.ts         data exploration → scripts/exploration.md
 ### Run it
 
 ```bash
-npm run build:sample     # regenerate data/sample/ from the full CSVs (committed)
+npm run build:data -- <csv folder>   # rebuild data/parquet/ from the Kaggle CSVs
 npm run explore          # regenerate scripts/exploration.md from the CSVs
 npm run dev              # http://localhost:3051
 npm test                 # vitest: schema + DuckDB loop evals (MOCK_LLM, no spend)
@@ -148,10 +148,15 @@ Auth: the route calls the Anthropic Messages API (`@anthropic-ai/sdk`). Set a
 Console API key in `.env.local` (`ANTHROPIC_API_KEY=sk-ant-...`); see
 `.env.local.example`. `MOCK_LLM=1` runs the whole pipeline with no model call / no spend.
 
-Data: the full ~120MB Olist CSVs (gitignored) go in `data/` for local dev; a small
-referentially-consistent sample lives in `data/sample/` (committed) so deployments
-and CI have data. `lib/db.ts` uses the full set when present, else the sample;
-`npm run build:sample` regenerates the sample.
+Data: the full Olist dataset (about 99k orders, 2016 to 2018) is committed as zstd
+Parquet in `data/parquet/`, eight tables including sellers; geolocation is left out.
+The app, CI and the deployment all query the same files. To rebuild them, download the
+CSVs from [Kaggle](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) and run
+`npm run build:data -- <folder>`, which converts each CSV and checks the joins.
+
+The dataset is published by Olist on Kaggle under
+[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/); the files in
+`data/parquet/` are a format conversion of it under the same license.
 
 Deploying (Vercel): runs as-is on the Node runtime — set `ANTHROPIC_API_KEY` and
 deploy. Since a public demo calls the model per request, the route is rate-limited
@@ -177,7 +182,7 @@ Three layers, cheapest-first, wired into CI (`.github/workflows/ci.yml`):
 - **Layer 2 — spec correctness** (`evals/correctness.test.ts`, deterministic, real
   DuckDB). Every widget's SQL must run and return rows whose columns match what the
   widget declares; plus an end-to-end check that the loop self-corrects (driven by
-  the mock). Runs against the full CSVs locally or the committed sample in CI.
+  the mock). Runs against the committed Parquet data, locally and in CI.
 - **Layer 3 — LLM-as-judge** (`evals/judge.test.ts`, real model, **gated**). For each
   golden question the model generates a dashboard and a second model call scores how
   well it answers (1–5). Off by default — run with `RUN_LLM_EVALS=1 npm test` — so CI

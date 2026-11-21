@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@duckdb/node-api", "@duckdb/node-bindings"],
   // Two things file tracing can't see and silently drops from the deployed
   // function unless forced in:
-  //  1. The sample CSVs (lib/db.ts reads them via a runtime path).
+  //  1. The Parquet data (lib/db.ts reads it via a runtime path).
   //  2. DuckDB's actual engine binary. @duckdb/node-bindings-linux-x64/duckdb.node
   //     is a thin wrapper that native-dlopen's a *sibling* ~100MB libduckdb.so in
   //     the same package dir — invisible to JS-level require() tracing. Without
@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
   //     object file" on first query (fails at runtime, not at build time).
   outputFileTracingIncludes: {
     "/api/generate": [
-      "./data/sample/**",
+      "./data/parquet/**",
       "./node_modules/@duckdb/node-bindings-linux-x64/**",
     ],
   },

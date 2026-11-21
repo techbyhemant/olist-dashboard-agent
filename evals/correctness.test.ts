@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
-import path from 'node:path';
+import { parquetPath } from '@/lib/db';
 import { validateSpec } from '@/lib/spec';
 import { runSpec } from '@/lib/run';
 import { generateDashboard } from '@/lib/generateDashboard';
-import { getGenerator } from '@/lib/llm';
+import { getGenerator, hasRecording } from '@/lib/llm';
+import { EXAMPLES } from '@/lib/examples';
 import { SAMPLE_SPEC } from '@/lib/sampleSpec';
 
 /**
@@ -13,11 +14,8 @@ import { SAMPLE_SPEC } from '@/lib/sampleSpec';
  * return rows whose columns match what the widget declares. Plus an end-to-end
  * check that the retry loop self-corrects, driven by the deterministic mock.
  */
-// Runs against the full CSVs locally, or the committed sample (data/sample/) in
-// CI — matching lib/db.ts's fallback. Skips only if neither is present.
-const DATA_READY =
-  fs.existsSync(path.join(process.cwd(), 'data', 'olist_orders_dataset.csv')) ||
-  fs.existsSync(path.join(process.cwd(), 'data', 'sample', 'olist_orders_dataset.csv'));
+// Runs against the committed Parquet files (data/parquet/); skips only if they are missing.
+const DATA_READY = fs.existsSync(parquetPath('orders'));
 
 describe.skipIf(!DATA_READY)('Layer 2 — spec correctness against real data', () => {
   it('every SAMPLE_SPEC widget runs and returns correctly-shaped data', async () => {
@@ -72,5 +70,12 @@ describe.skipIf(!DATA_READY)('Layer 2 — spec correctness against real data', (
     expect(result.drafts[0].error).toContain('<div> is not allowed');
     expect(result.drafts[1].error).toBeUndefined();
     expect(result.drafts[1].queries?.map((q) => q.id)).toEqual(['q_revenue', 'q_orders', 'q_top']);
+  });
+  // The live demo replays these recordings; each must still end in a valid dashboard on the current data.
+  it.each(EXAMPLES.filter((q) => hasRecording(q)))('recorded run still renders: %s', async (q) => {
+    process.env.MOCK_LLM = '';
+    process.env.RECORDED_RUNS = '1';
+    const result = await generateDashboard(q, getGenerator());
+    expect(result.ok ? 'ok' : result.error).toBe('ok');
   });
 });

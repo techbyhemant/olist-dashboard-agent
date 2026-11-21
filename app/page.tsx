@@ -239,7 +239,7 @@ export default function Home() {
             the data, and a broken draft goes back to the model once with the exact error.
           </p>
           <p className="mt-3 text-sm text-muted">
-            Data: a 4,000-order sample of the public Olist dataset.{' '}
+            Data: the full public Olist dataset, about 99,000 orders from 2016 to 2018.{' '}
             <a
               href="https://github.com/techbyhemant/olist-dashboard-agent"
               className="font-medium text-brand underline decoration-brand/30 underline-offset-4 hover:decoration-brand"

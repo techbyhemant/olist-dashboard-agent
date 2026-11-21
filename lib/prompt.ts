@@ -5,20 +5,21 @@
  */
 
 const SCHEMA_SUMMARY = `
-Tables are DuckDB views over the Olist CSVs (query in place). DuckDB SQL dialect.
+Tables are DuckDB views over the full Olist dataset (~99k orders). DuckDB SQL dialect.
 Available tables (use these names directly): orders, order_items, products,
-customers, payments, reviews, category_translation. (geolocation & sellers excluded.)
+customers, sellers, payments, reviews, category_translation. (geolocation excluded.)
 
 orders(order_id PK, customer_id FK->customers, order_status, order_purchase_timestamp,
        order_approved_at, order_delivered_carrier_date, order_delivered_customer_date,
        order_estimated_delivery_date)  -- TIMESTAMPs; status in:
        delivered|shipped|canceled|unavailable|invoiced|processing|created|approved
 order_items(order_id FK->orders, order_item_id [per-order line no, NOT global id],
-       product_id FK->products, seller_id, shipping_limit_date, price DOUBLE, freight_value DOUBLE)
+       product_id FK->products, seller_id FK->sellers, shipping_limit_date, price DOUBLE, freight_value DOUBLE)
 products(product_id PK, product_category_name [Portuguese, may be NULL], product_weight_g,
        product_length_cm, product_height_cm, product_width_cm, product_photos_qty, ...)
 customers(customer_id PK [1:1 with an order], customer_unique_id [person across orders],
        customer_zip_code_prefix, customer_city, customer_state)
+sellers(seller_id PK, seller_zip_code_prefix, seller_city, seller_state)
 payments(order_id FK->orders, payment_sequential, payment_type
        [credit_card|boleto|voucher|debit_card|not_defined], payment_installments, payment_value DOUBLE)
 reviews(review_id, order_id FK->orders, review_score 1..5,

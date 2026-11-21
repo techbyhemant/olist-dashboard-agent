@@ -8,7 +8,7 @@
     "start": "next start -p 3051",
     "lint": "eslint",
     "explore": "node scripts/explore.ts",
-    "build:sample": "node scripts/build-sample.ts",
+    "build:data": "node scripts/build-data.ts",
     "test": "vitest run",
     "record": "RECORD_RUNS=1 vitest run evals/record.test.ts"
   },

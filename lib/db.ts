@@ -1,19 +1,17 @@
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
-import fs from 'node:fs';
 import path from 'node:path';
 
 /**
- * Map of clean table names -> CSV file on disk.
- *
- * We deliberately query the CSVs *in place* with read_csv_auto rather than
- * importing them into a persistent database. geolocation and sellers are
- * intentionally omitted for now.
+ * Clean table name -> the Olist CSV it is built from. `npm run build:data` turns
+ * each CSV into data/parquet/<name>.parquet (committed, ~zstd), which is what the
+ * app queries. geolocation is left out: 1M rows of zip-code points and no map widget.
  */
 export const TABLES = {
   orders: 'olist_orders_dataset.csv',
   order_items: 'olist_order_items_dataset.csv',
   products: 'olist_products_dataset.csv',
   customers: 'olist_customers_dataset.csv',
+  sellers: 'olist_sellers_dataset.csv',
   payments: 'olist_order_payments_dataset.csv',
   reviews: 'olist_order_reviews_dataset.csv',
   category_translation: 'product_category_name_translation.csv',
@@ -21,32 +19,20 @@ export const TABLES = {
 
 export type TableName = keyof typeof TABLES;
 
-/**
- * The full ~120MB dataset lives in `data/` (gitignored — for local dev). A small
- * referentially-consistent sample lives in `data/sample/` (committed) so a
- * deployment has data. Prefer the full set when present, else the sample.
- * Regenerate the sample from the full CSVs with `npm run build:sample`.
- */
-const FULL_DIR = path.join(process.cwd(), 'data');
-const SAMPLE_DIR = path.join(FULL_DIR, 'sample');
-const DATA_DIR = fs.existsSync(path.join(FULL_DIR, TABLES.orders)) ? FULL_DIR : SAMPLE_DIR;
+export const PARQUET_DIR = path.join(process.cwd(), 'data', 'parquet');
 
-/** Absolute path to a table's CSV. */
-export function csvPath(table: TableName): string {
-  return path.join(DATA_DIR, TABLES[table]);
+/** Absolute path to a table's Parquet file. */
+export function parquetPath(table: TableName): string {
+  return path.join(PARQUET_DIR, `${table}.parquet`);
 }
 
-/**
- * A SQL prelude that exposes each CSV as a queryable view under its clean name,
- * e.g. `SELECT * FROM orders`. Re-created per connection; views are cheap and
- * read_csv_auto handles type inference + header detection.
- */
+/** Exposes each Parquet file as a view under its clean name, e.g. `SELECT * FROM orders`. */
 function buildViewPrelude(): string {
   return (Object.keys(TABLES) as TableName[])
     .map(
       (name) =>
         `CREATE OR REPLACE VIEW ${name} AS ` +
-        `SELECT * FROM read_csv_auto('${csvPath(name).replace(/'/g, "''")}');`,
+        `SELECT * FROM read_parquet('${parquetPath(name).replace(/'/g, "''")}');`,
     )
     .join('\n');
 }
@@ -76,9 +62,8 @@ function normalize(value: unknown): unknown {
 }
 
 /**
- * Run a read-only SQL query against the in-place CSV views and return plain
- * row objects. Table names available: orders, order_items, products, customers,
- * payments, reviews, category_translation.
+ * Run a read-only SQL query against the Parquet views and return plain
+ * row objects. Table names are the keys of TABLES.
  */
 export async function query(sql: string): Promise<Record<string, unknown>[]> {
   const connection = await getConnection();
