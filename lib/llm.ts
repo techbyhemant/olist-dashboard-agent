@@ -83,6 +83,11 @@ const REVENUE_SQL = `SELECT ROUND(SUM(oi.price), 2) AS revenue
   FROM order_items oi JOIN orders o USING (order_id)
   WHERE o.order_status = 'delivered'`;
 
+// Both filters, applied to a query that has orders o joined to customers c.
+const FILTERED = `($state IS NULL OR c.customer_state = $state)
+    AND ($period_from IS NULL OR o.order_purchase_timestamp >= CAST($period_from AS DATE))
+    AND ($period_to IS NULL OR o.order_purchase_timestamp < CAST($period_to AS DATE))`;
+
 class MockGenerator implements SpecGenerator {
   readonly name = 'mock';
 
@@ -98,10 +103,18 @@ class MockGenerator implements SpecGenerator {
     return JSON.stringify({
       title: 'Mock dashboard (corrected)',
       queries: [
-        { id: 'q_revenue', sql: REVENUE_SQL },
+        { id: 'q_states', sql: `SELECT DISTINCT customer_state AS value FROM customers ORDER BY 1` },
+        {
+          id: 'q_revenue',
+          sql: `SELECT ROUND(SUM(oi.price), 2) AS revenue
+                FROM order_items oi JOIN orders o USING (order_id) JOIN customers c USING (customer_id)
+                WHERE o.order_status = 'delivered' AND ${FILTERED}`,
+        },
         {
           id: 'q_orders',
-          sql: `SELECT COUNT(DISTINCT order_id) AS orders FROM orders WHERE order_status = 'delivered'`,
+          sql: `SELECT COUNT(DISTINCT o.order_id) AS orders
+                FROM orders o JOIN customers c USING (customer_id)
+                WHERE o.order_status = 'delivered' AND ${FILTERED}`,
         },
         {
           id: 'q_top',
@@ -109,13 +122,16 @@ class MockGenerator implements SpecGenerator {
                        ROUND(SUM(oi.price), 2) AS revenue
                 FROM order_items oi
                 JOIN orders o USING (order_id)
+                JOIN customers c USING (customer_id)
                 JOIN products p USING (product_id)
                 LEFT JOIN category_translation t USING (product_category_name)
-                WHERE o.order_status = 'delivered'
+                WHERE o.order_status = 'delivered' AND ${FILTERED}
                 GROUP BY 1 ORDER BY revenue DESC LIMIT 8`,
         },
       ],
-      html: `<p>Revenue and order count for delivered orders, then the categories that bring in the most.</p>
+      html: `<filter-select name="state" label="Customer state" options-query="q_states"></filter-select>
+<date-range name="period" label="Purchase date"></date-range>
+<p>Revenue and order count for delivered orders, then the categories that bring in the most.</p>
 <grid-row>
   <kpi-tile title="Total revenue (delivered)" query="q_revenue" metric="revenue"></kpi-tile>
   <kpi-tile title="Delivered orders" query="q_orders" metric="orders"></kpi-tile>

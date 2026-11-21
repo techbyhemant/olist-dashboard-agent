@@ -1,12 +1,16 @@
 import { z } from 'zod';
 import {
   SqlSchema,
+  filterParams,
   formatIssues,
   validateSpec,
+  widgetSql,
   type DashboardSpec,
+  type Filter,
   type Tile,
   type Widget,
 } from './spec';
+import { paramNames } from './sql-safety';
 
 /**
  * THE LAYOUT CONTRACT.
@@ -66,7 +70,10 @@ export const TAGS: Record<string, TagRule> = {
   'bar-chart': chart,
   'line-chart': chart,
   'data-table': { attrs: ['title', 'query', 'columns'], required: ['title', 'query', 'columns'], children: 'none' },
+  'filter-select': { attrs: ['name', 'label', 'options-query'], required: ['name', 'label', 'options-query'], children: 'none' },
+  'date-range': { attrs: ['name', 'label'], required: ['name', 'label'], children: 'none' },
 };
+const FILTER_TAGS = new Set(['filter-select', 'date-range']);
 
 /** What React renders: text and containers, with widgets referenced by index into spec.widgets. */
 export type LayoutNode =
@@ -166,6 +173,7 @@ export function parseLayout(raw: unknown): LayoutResult {
   }
 
   const widgets: Widget[] = [];
+  const filters: Filter[] = [];
 
   function sqlFor(el: El, attr: string): string {
     const id = el.attrs[attr];
@@ -247,6 +255,20 @@ export function parseLayout(raw: unknown): LayoutResult {
         errors.push(`<kpi-group> may only contain <kpi-tile>, not <${child.tag}>`);
         continue;
       }
+      if (FILTER_TAGS.has(child.tag)) {
+        if (parent.tag !== '#root') {
+          errors.push(`<${child.tag}> must sit at the top level, not inside ${where}`);
+          continue;
+        }
+        checkAttrs(child, rule);
+        const { name, label } = child.attrs;
+        filters.push(
+          child.tag === 'date-range'
+            ? { type: 'dateRange', name, label }
+            : { type: 'select', name, label, sql: sqlFor(child, 'options-query') },
+        );
+        continue; // filters render in the filter bar, not in the layout
+      }
       checkAttrs(child, rule);
 
       if (rule.children === 'text') {
@@ -270,12 +292,38 @@ export function parseLayout(raw: unknown): LayoutResult {
   if (!errors.length && !widgets.length) {
     errors.push('the html has no widgets; use kpi-tile, kpi-group, bar-chart, line-chart or data-table');
   }
+  if (!errors.length) checkParams(widgets, filters, errors);
   if (errors.length) {
     const more = errors.length > MAX_ERRORS ? ` (+${errors.length - MAX_ERRORS} more)` : '';
     return { ok: false, error: `html: ${errors.slice(0, MAX_ERRORS).join('; ')}${more}` };
   }
 
-  const spec = validateSpec({ title, widgets });
+  const spec = validateSpec({ title, widgets, ...(filters.length ? { filters } : {}) });
   if (!spec.ok) return spec;
   return { ok: true, spec: spec.spec, layout };
+}
+
+/**
+ * Every $param a widget query uses must belong to a declared filter, every
+ * filter parameter must be used, and option queries take no parameters
+ * (their choices must not shift as the viewer filters).
+ */
+function checkParams(widgets: Widget[], filters: Filter[], errors: string[]) {
+  const declared = new Set<string>();
+  for (const f of filters) {
+    if (filterParams(f).some((p) => declared.has(p))) errors.push(`two filters are named "${f.name}"`);
+    filterParams(f).forEach((p) => declared.add(p));
+    if (f.type === 'select' && paramNames(f.sql).length) {
+      errors.push(`the options-query of filter "${f.name}" must not use $parameters`);
+    }
+  }
+  const known = declared.size ? [...declared].map((p) => `$${p}`).join(', ') : 'none (add a filter tag first)';
+  const used = new Set<string>();
+  for (const p of widgets.flatMap(widgetSql).flatMap(paramNames)) {
+    if (!declared.has(p) && !used.has(p)) errors.push(`a query uses $${p}, but no filter declares it; declared: ${known}`);
+    used.add(p);
+  }
+  for (const p of declared) {
+    if (!used.has(p)) errors.push(`no widget query uses $${p}; filter on it with ($${p} IS NULL OR ...) or remove the filter`);
+  }
 }

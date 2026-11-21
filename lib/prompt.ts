@@ -65,6 +65,22 @@ Rules that must line up with the SQL result columns:
 - Text outside <h2>, <h3> or <p> is rejected.
 - Prefer kpi tiles in a grid-row or kpi-group for 2-4 related numbers, a bar chart for category
   comparisons, a line chart for time series, and a table for multi-column breakdowns.
+
+Filters (optional; top level only, never inside section, grid-row or kpi-group). They render as a bar
+above the dashboard, and every query re-runs when the viewer changes one:
+  <filter-select name="" label="" options-query="">   a dropdown; its query returns the choices in ONE
+                                                     column named value and uses no $parameters
+  <date-range name="" label="">                      a from/to date pair
+name = lowercase letters, digits, _. Queries read filters as DuckDB parameters, and NULL means "All",
+so guard every use:
+- filter-select name="state" binds $state:
+    ($state IS NULL OR c.customer_state = $state)
+- date-range name="period" binds $period_from (inclusive) and $period_to (exclusive), as 'YYYY-MM-DD':
+    ($period_from IS NULL OR o.order_purchase_timestamp >= CAST($period_from AS DATE))
+    AND ($period_to IS NULL OR o.order_purchase_timestamp < CAST($period_to AS DATE))
+- A query may use only parameters a filter declares, and each declared parameter must be used.
+- Add 1-2 filters when the viewer would want to slice the answer (by state, category, payment type
+  or date). Apply each filter to every query where it makes sense, so the whole dashboard moves together.
 `.trim();
 
 export function buildSystemPrompt(): string {
@@ -76,7 +92,7 @@ ${SCHEMA_SUMMARY}
 
 ${CONTRACT}
 
-Keep it focused: 1-4 widgets that directly answer the question. Always alias SQL
+Keep it focused: 2-6 widgets that directly answer the question. Always alias SQL
 output columns to match the metric/x/series/columns names you put in the html.
 Return ONLY the JSON object.`;
 }
@@ -95,7 +111,7 @@ Failure reason:
 ${priorError}
 
 Common fixes: use only the allowed tags and attributes, point every query attribute at an
-existing query id, make metric/x/series/columns names EXACTLY match the columns your SQL
+existing query id, declare a filter for every $parameter you use, make metric/x/series/columns names EXACTLY match the columns your SQL
 SELECTs (add aliases), ensure each SQL is a single read-only SELECT that returns rows,
 respect the multi-row-per-order and Portuguese-category rules. Return ONLY the JSON object.`;
 }

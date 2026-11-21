@@ -70,6 +70,47 @@ describe('Layer 1b — html layout allow-list', () => {
     expect(r.ok ? '' : r.error).toContain('used twice');
   });
 
+  describe('filters', () => {
+    const fq = [
+      { id: 'q_opts', sql: "SELECT 'SP' AS value" },
+      { id: 'q_f', sql: "SELECT 1 AS revenue WHERE ($state IS NULL OR 'SP' = $state) AND ($p_from IS NULL OR $p_to IS NULL)" },
+      { id: 'q_plain', sql: 'SELECT 1 AS revenue' },
+    ];
+    const SELECT = '<filter-select name="state" label="State" options-query="q_opts"/>';
+    const RANGE = '<date-range name="p" label="Period"/>';
+    const tile = (q: string) => `<kpi-tile title="R" query="${q}" metric="revenue"/>`;
+    const err = (html: string, qs = fq) => {
+      const r = run(html, qs);
+      expect(r.ok).toBe(false);
+      return r.ok ? '' : r.error;
+    };
+
+    it('reads top-level filter tags into spec.filters, outside the layout tree', () => {
+      const r = run(SELECT + RANGE + tile('q_f'), fq);
+      expect(r.ok ? 'ok' : r.error).toBe('ok');
+      if (!r.ok) return;
+      expect(r.spec.filters).toEqual([
+        { type: 'select', name: 'state', label: 'State', sql: "SELECT 'SP' AS value" },
+        { type: 'dateRange', name: 'p', label: 'Period' },
+      ]);
+      expect(r.layout).toEqual([{ kind: 'widget', index: 0 }]);
+    });
+
+    it.each([
+      ['a nested filter', `<section>${SELECT}</section>` + RANGE + tile('q_f'), 'must sit at the top level'],
+      ['an undeclared parameter', RANGE + tile('q_f'), 'uses $state, but no filter declares it'],
+      ['an unused filter', SELECT + RANGE + tile('q_f') + '<date-range name="extra" label="X"/>', 'no widget query uses $extra_from'],
+      ['two filters with one name', SELECT + RANGE + tile('q_f') + '<filter-select name="state" label="S" options-query="q_opts"/>', 'two filters are named "state"'],
+    ])('rejects %s', (_, html, message) => {
+      expect(err(html)).toContain(message);
+    });
+
+    it('rejects an options query that takes parameters', () => {
+      const qs = [{ ...fq[0], sql: 'SELECT $state AS value' }, fq[1]];
+      expect(err(SELECT + RANGE + tile('q_f'), qs)).toContain('options-query of filter "state" must not use $parameters');
+    });
+  });
+
   it('rejects the old widgets-only JSON shape', () => {
     const r = parseLayout({ title: 'T', widgets: [] });
     expect(r.ok).toBe(false);

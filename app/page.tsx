@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import type { DashboardSpec } from '@/lib/spec';
+import { useRef, useState } from 'react';
+import { filterParams, type DashboardSpec } from '@/lib/spec';
 import type { WidgetData } from '@/lib/run';
 import type { LayoutNode } from '@/lib/layout';
 import type { Draft, LogEntry, StreamEvent } from '@/lib/generateDashboard';
@@ -9,7 +9,16 @@ import { DashboardRenderer } from '@/components/DashboardRenderer';
 import { EXAMPLES } from '@/lib/examples';
 
 type FinalResult =
-  | { ok: true; spec: DashboardSpec; layout: LayoutNode[]; data: WidgetData[]; log: LogEntry[]; attempts: number; drafts: Draft[] }
+  | {
+      ok: true;
+      spec: DashboardSpec;
+      layout: LayoutNode[];
+      data: WidgetData[];
+      options: Record<string, string[]>;
+      log: LogEntry[];
+      attempts: number;
+      drafts: Draft[];
+    }
   | { ok: false; error: string; log?: LogEntry[]; attempts?: number; drafts?: Draft[] };
 
 const DOT: Record<LogEntry['status'], string> = {
@@ -153,6 +162,68 @@ function ModelOutput({ drafts }: { drafts: Draft[] }) {
   );
 }
 
+const CONTROL =
+  'rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink focus:border-brand focus:ring-2 focus:ring-brand/20 focus:outline-none disabled:opacity-50';
+
+/** The filters the model declared. Values are keyed by parameter name; '' means All. */
+function FilterBar({
+  spec,
+  options,
+  values,
+  busy,
+  onChange,
+}: {
+  spec: DashboardSpec;
+  options: Record<string, string[]>;
+  values: Record<string, string>;
+  busy: boolean;
+  onChange: (next: Record<string, string>) => void;
+}) {
+  const set = (name: string, v: string) => onChange({ ...values, [name]: v });
+  const any = Object.values(values).some(Boolean);
+  return (
+    <div className="flex flex-wrap items-end gap-x-5 gap-y-3 rounded-2xl border border-line bg-white p-4 sm:px-5">
+      {spec.filters!.map((f) =>
+        f.type === 'select' ? (
+          <label key={f.name} className="flex flex-col gap-1 text-sm text-muted">
+            {f.label}
+            <select className={`${CONTROL} min-w-40`} value={values[f.name] ?? ''} onChange={(e) => set(f.name, e.target.value)}>
+              <option value="">All</option>
+              {(options[f.name] ?? []).map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <fieldset key={f.name} className="flex flex-col gap-1 text-sm text-muted">
+            <legend className="mb-1">{f.label}</legend>
+            <div className="flex flex-wrap items-center gap-2">
+              {filterParams(f).map((p, i) => (
+                <input
+                  key={p}
+                  type="date"
+                  aria-label={`${f.label} ${i ? 'to' : 'from'}`}
+                  className={CONTROL}
+                  value={values[p] ?? ''}
+                  onChange={(e) => set(p, e.target.value)}
+                />
+              ))}
+            </div>
+          </fieldset>
+        ),
+      )}
+      <div className="flex items-center gap-3 pb-2 text-sm">
+        {any && (
+          <button type="button" onClick={() => onChange({})} className="font-medium text-brand underline decoration-brand/30 underline-offset-4 hover:decoration-brand">
+            Clear filters
+          </button>
+        )}
+        {busy && <span className="text-muted" role="status">Updating…</span>}
+      </div>
+    </div>
+  );
+}
+
 function Skeleton() {
   return (
     <div className="space-y-4" aria-hidden>
@@ -172,6 +243,33 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [res, setRes] = useState<FinalResult | null>(null);
+  const [asked, setAsked] = useState(''); // the question the dashboard on screen answers
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filtering, setFiltering] = useState(false);
+  const [filterError, setFilterError] = useState('');
+  const latest = useRef(0); // ignore replies to filter changes that were overtaken
+
+  async function applyFilters(next: Record<string, string>) {
+    setFilters(next);
+    setFilterError('');
+    setFiltering(true);
+    const id = ++latest.current;
+    try {
+      const r = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ question: asked, params: next }),
+      });
+      const body = (await r.json()) as { ok: boolean; data?: WidgetData[]; error?: string };
+      if (id !== latest.current) return;
+      if (body.ok && body.data) setRes((prev) => (prev?.ok ? { ...prev, data: body.data! } : prev));
+      else setFilterError(body.error ?? 'Could not apply the filters.');
+    } catch (e) {
+      if (id === latest.current) setFilterError(`Request failed: ${(e as Error).message}`);
+    } finally {
+      if (id === latest.current) setFiltering(false);
+    }
+  }
 
   async function submit(q: string) {
     const trimmed = q.trim();
@@ -179,6 +277,10 @@ export default function Home() {
     setLoading(true);
     setLog([]);
     setRes(null);
+    setAsked(trimmed);
+    setFilters({});
+    setFilterError('');
+    latest.current++;
 
     try {
       const r = await fetch('/api/generate', {
@@ -314,7 +416,18 @@ export default function Home() {
             </p>
           )}
 
-          {res?.ok === true && <DashboardRenderer spec={res.spec} data={res.data} layout={res.layout} />}
+          {res?.ok === true && res.spec.filters?.length ? (
+            <div className="space-y-2">
+              <FilterBar spec={res.spec} options={res.options} values={filters} busy={filtering} onChange={applyFilters} />
+              {filterError && <p className="text-sm text-[#b5523b]" role="alert">{filterError}</p>}
+            </div>
+          ) : null}
+
+          {res?.ok === true && (
+            <div aria-busy={filtering} className={`transition-opacity motion-reduce:transition-none ${filtering ? 'opacity-50' : ''}`}>
+              <DashboardRenderer spec={res.spec} data={res.data} layout={res.layout} />
+            </div>
+          )}
 
           {res?.drafts && res.drafts.length > 0 && <ModelOutput drafts={res.drafts} />}
         </section>

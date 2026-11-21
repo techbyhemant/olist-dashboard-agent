@@ -1,6 +1,6 @@
 import type { DashboardSpec } from './spec';
 import { parseLayout, type LayoutNode } from './layout';
-import { runSpec, WidgetRunError, type WidgetData } from './run';
+import { runOptions, runSpec, WidgetRunError, type WidgetData } from './run';
 import { getGenerator, type SpecGenerator } from './llm';
 
 /**
@@ -30,7 +30,16 @@ export interface Draft {
 }
 
 export type GenerateResult =
-  | { ok: true; spec: DashboardSpec; layout: LayoutNode[]; data: WidgetData[]; log: LogEntry[]; attempts: number; drafts: Draft[] }
+  | {
+      ok: true;
+      spec: DashboardSpec;
+      layout: LayoutNode[];
+      data: WidgetData[];
+      options: Record<string, string[]>; // choices per select filter
+      log: LogEntry[];
+      attempts: number;
+      drafts: Draft[];
+    }
   | { ok: false; error: string; log: LogEntry[]; attempts: number; drafts: Draft[] };
 
 export type StreamEvent =
@@ -38,6 +47,19 @@ export type StreamEvent =
   | { type: 'result'; result: GenerateResult };
 
 const MAX_ATTEMPTS = 2; // initial try + one retry
+
+/**
+ * The last validated spec per question, so /api/run can re-run it with filter
+ * values without trusting a spec sent back by the browser. On globalThis because
+ * Next may load this module once per route bundle.
+ * ponytail: in-process only; a live-mode rerun that lands on another serverless
+ * instance gets a 409 and the page asks for a regenerate. A KV store fixes that.
+ */
+type Accepted = { spec: DashboardSpec; options: Record<string, string[]> };
+const g = globalThis as { __acceptedSpecs?: Map<string, Accepted> };
+const accepted = (g.__acceptedSpecs ??= new Map());
+const questionKey = (q: string) => q.trim().toLowerCase();
+export const acceptedSpec = (question: string) => accepted.get(questionKey(question));
 
 /** Strip an accidental ```json fence, then JSON.parse. */
 function parseSpecJson(text: string): { ok: true; value: unknown } | { ok: false; error: string } {
@@ -116,9 +138,13 @@ export async function* streamDashboard(
 
     // 4. Execute each widget's SQL (validates non-empty + correct-shaped rows)
     try {
-      const data = await runSpec(validated.spec);
+      const [data, options] = await Promise.all([runSpec(validated.spec), runOptions(validated.spec)]);
+      accepted.set(questionKey(question), { spec: validated.spec, options });
       yield step('success', 'All widget SQL executed and returned rows. ✓');
-      yield { type: 'result', result: { ok: true, spec: validated.spec, layout: validated.layout, data, log, attempts: attempt, drafts } };
+      yield {
+        type: 'result',
+        result: { ok: true, spec: validated.spec, layout: validated.layout, data, options, log, attempts: attempt, drafts },
+      };
       return;
     } catch (e) {
       const detail = e instanceof WidgetRunError ? e.message : (e as Error).message;

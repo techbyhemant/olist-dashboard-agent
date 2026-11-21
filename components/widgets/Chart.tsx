@@ -49,6 +49,16 @@ export function Chart({
         : formatValue(value);
     return [text, String(name)] as [string, string];
   };
+  if (rows.length === 0) {
+    return (
+      <section className="rounded-2xl border border-line bg-white p-5">
+        <h3 className="mb-4 text-base font-semibold text-ink">{title}</h3>
+      <p className="grid h-40 place-items-center rounded-lg border border-dashed border-line text-sm text-muted">
+        No rows for these filters.
+      </p>
+      </section>
+    );
+  }
   // many categories: lay bars sideways so every label stays readable, even on a phone
   const sideways = chartType === 'bar' && rows.length > 8;
   const height = sideways ? rows.length * 26 + 48 : 288;

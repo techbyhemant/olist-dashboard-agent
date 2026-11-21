@@ -30,8 +30,8 @@ how to arrange it, and every piece it produces is validated before anything rend
 
 Models are good at writing HTML. Open HTML is impossible to verify, because any
 tag, attribute or script could appear. So the model gets HTML with a closed
-vocabulary: three layout and text tags, five widget tags, and a fixed attribute
-list for each. It answers with one JSON object:
+vocabulary: layout and text tags, five widget tags, two filter tags, and a fixed
+attribute list for each. It answers with one JSON object:
 
 ```json
 {
@@ -57,6 +57,8 @@ list for each. It answers with one JSON object:
 | `kpi-group` | title | `kpi-tile` only |
 | `bar-chart`, `line-chart` | title, query, x, series | nothing |
 | `data-table` | title, query, columns | nothing |
+| `filter-select` | name, label, options-query | nothing; top level only |
+| `date-range` | name, label | nothing; top level only |
 
 What that buys:
 
@@ -80,6 +82,24 @@ What that buys:
   allows a single read-only SELECT or CTE and blocks file-access functions. It runs
   as a Zod refinement (so a violation becomes an error the retry loop can fix) and
   again right before execution.
+
+### Filters: values are bound, never spliced
+
+A dashboard can declare filters, which render as a bar above it. Each filter is
+a named DuckDB parameter: `filter-select name="state"` binds `$state`, and
+`date-range name="period"` binds `$period_from` and `$period_to`. NULL means
+"All", so queries guard each use, as in `($state IS NULL OR c.customer_state = $state)`.
+
+- **Checked at generation.** Every `$param` a query uses must belong to a
+  declared filter, every filter must be used, and an options query takes no
+  parameters. A slip is fed back through the retry loop like any other error.
+- **The browser sends values, not SQL.** Changing a filter posts the values to
+  `/api/run`. The server re-runs its own copy of the validated spec, accepts a
+  select value only if it is one of that filter's options, accepts dates only as
+  real `YYYY-MM-DD` days, and binds them as parameters.
+- **An empty result is an answer.** Unfiltered, a query that returns no rows is
+  a broken query and gets retried. Filtered, it can be a real answer, so the
+  widget shows an empty state instead.
 
 ### The validate → retry loop (`lib/generateDashboard.ts`)
 
@@ -126,7 +146,8 @@ lib/run.ts                 execute each widget's SQL, validate shape
 lib/prompt.ts              system prompt (schema summary + tag vocabulary) + retry prompt
 lib/llm.ts                 Messages API generator + deterministic mock
 lib/generateDashboard.ts   the generate→validate→run→retry loop
-app/api/generate/route.ts  POST { question } → streamed log, then { ok, spec, layout, data, attempts }
+app/api/generate/route.ts  POST { question } → streamed log, then { ok, spec, layout, data, options, attempts }
+app/api/run/route.ts       POST { question, params } → re-runs the validated spec with filter values
 components/widgets/*       Tile, TileGroup, Chart, Table
 components/DashboardRenderer.tsx  renders the layout tree with the widgets
 evals/                     schema + layout (L1), correctness (L2), judge (L3, gated)
@@ -208,7 +229,8 @@ layer is the natural v2 (see Future Work).
 Deliberately **not** built — v1 is one-shot generate → validate → render, with one
 retry:
 
-- save / refresh / edit dashboards; preview-then-apply
+- save / refresh / edit dashboards; preview-then-apply (the validated spec lives in
+  server memory, so a filter change on a new serverless instance asks for a regenerate)
 - insights & recommendations (the layout has `p` notes, but nothing checks them
   against the data)
 - column spans and explicit grid placement (`grid-row` only places items side by side)

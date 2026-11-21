@@ -79,10 +79,30 @@ export const WidgetSchema = z.discriminatedUnion('type', [
   TableWidget,
 ]);
 
+/**
+ * A filter the viewer can change. Queries read it as a named DuckDB parameter:
+ * a select binds $<name>, a date range binds $<name>_from (inclusive) and
+ * $<name>_to (exclusive). NULL means "All", so queries write ($x IS NULL OR col = $x).
+ */
+const FilterName = z.string().regex(/^[a-z][a-z0-9_]*$/, 'filter name must be lowercase letters, digits or _');
+
+export const FilterSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('select'),
+      name: FilterName,
+      label: z.string().min(1),
+      sql: SqlSchema.describe('returns the choices in a column named value'),
+    })
+    .strict(),
+  z.object({ type: z.literal('dateRange'), name: FilterName, label: z.string().min(1) }).strict(),
+]);
+
 export const DashboardSpecSchema = z
   .object({
     title: z.string().min(1),
     widgets: z.array(WidgetSchema).min(1, 'a dashboard needs at least one widget'),
+    filters: z.array(FilterSchema).optional(),
   })
   .strict();
 
@@ -90,6 +110,18 @@ export const DashboardSpecSchema = z
 export type Tile = z.infer<typeof TileSchema>;
 export type Widget = z.infer<typeof WidgetSchema>;
 export type DashboardSpec = z.infer<typeof DashboardSpecSchema>;
+export type Filter = z.infer<typeof FilterSchema>;
+
+/** The parameter names a filter binds. */
+export const filterParams = (f: Filter): string[] =>
+  f.type === 'select' ? [f.name] : [`${f.name}_from`, `${f.name}_to`];
+
+/** Every SQL string a widget runs. */
+export const widgetSql = (w: Widget): string[] => {
+  const tile = (t: Tile) => [t.sql, ...(t.delta ? [t.delta.sql] : [])];
+  if (w.type === 'tileGroup') return w.tiles.flatMap(tile);
+  return w.type === 'tile' ? tile(w) : [w.sql];
+};
 
 export type ValidateResult =
   | { ok: true; spec: DashboardSpec }

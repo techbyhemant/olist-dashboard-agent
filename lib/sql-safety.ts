@@ -65,3 +65,8 @@ export function assertSafeSelect(sql: string, label = 'query'): void {
     throw new Error(`Unsafe SQL rejected (${label}): ${result.reason}`);
   }
 }
+
+/** Named parameters ($name) a query uses, ignoring comments and string literals. */
+export function paramNames(sql: string): string[] {
+  return [...new Set([...stripCommentsAndStrings(sql).matchAll(/\$([a-z_][a-z0-9_]*)/gi)].map((m) => m[1]))];
+}

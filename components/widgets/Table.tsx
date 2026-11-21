@@ -43,7 +43,12 @@ export function Table({
           {rows.length} rows{rows.length > 9 ? ', scroll for all' : ''}
         </span>
       </div>
-      {/* fixed height with its own scroll, so a long result never stretches the page */}
+      {rows.length === 0 ? (
+      <p className="grid h-40 place-items-center rounded-lg border border-dashed border-line text-sm text-muted">
+        No rows for these filters.
+      </p>
+      ) : (
+      /* fixed height with its own scroll, so a long result never stretches the page */
       <div className="max-h-96 overflow-auto rounded-lg border border-line">
         <table className="w-full border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-canvas">
@@ -87,6 +92,7 @@ export function Table({
           </tbody>
         </table>
       </div>
+      )}
     </section>
   );
 }

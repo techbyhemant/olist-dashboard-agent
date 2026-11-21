@@ -1,5 +1,6 @@
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
 import path from 'node:path';
+import { paramNames } from './sql-safety';
 
 /**
  * Clean table name -> the Olist CSV it is built from. `npm run build:data` turns
@@ -63,11 +64,17 @@ function normalize(value: unknown): unknown {
 
 /**
  * Run a read-only SQL query against the Parquet views and return plain
- * row objects. Table names are the keys of TABLES.
+ * row objects. Table names are the keys of TABLES. `params` fills the query's
+ * $name placeholders (DuckDB binds them, nothing is spliced into the SQL);
+ * a placeholder with no value binds NULL. DuckDB rejects extra keys, so only
+ * the names this query uses are passed.
  */
-export async function query(sql: string): Promise<Record<string, unknown>[]> {
+export async function query(sql: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>[]> {
   const connection = await getConnection();
-  const reader = await connection.runAndReadAll(sql);
+  const names = paramNames(sql);
+  const reader = names.length
+    ? await connection.runAndReadAll(sql, Object.fromEntries(names.map((n) => [n, params[n] ?? null])) as never)
+    : await connection.runAndReadAll(sql);
   const rows = reader.getRowObjectsJS();
   return rows.map((row) => {
     const out: Record<string, unknown> = {};
