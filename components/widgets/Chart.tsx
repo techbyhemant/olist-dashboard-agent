@@ -21,7 +21,9 @@ import {
   isMoneyLabel,
 } from '@/lib/format';
 
-const PALETTE = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
+const PALETTE = ['#0e7c5a', '#e0a100', '#2f5d8a', '#b5523b', '#6b5b95', '#5e8c31'];
+const AXIS = { fontSize: 12, fill: '#66737f' };
+const GRID = '#e8ecea';
 
 export function Chart({
   title,
@@ -47,17 +49,31 @@ export function Chart({
         : formatValue(value);
     return [text, String(name)] as [string, string];
   };
+  // many categories: lay bars sideways so every label stays readable, even on a phone
+  const sideways = chartType === 'bar' && rows.length > 8;
+  const height = sideways ? rows.length * 26 + 48 : 288;
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-      <h3 className="mb-4 text-base font-semibold text-zinc-900">{title}</h3>
-      <div className="h-72 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          {chartType === 'bar' ? (
+    <section className="rounded-2xl border border-line bg-white p-5">
+      <h3 className="mb-4 text-base font-semibold text-ink">{title}</h3>
+      <div className="w-full" style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height }}>
+          {sideways ? (
+            <BarChart data={rows} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 4 }}>
+              <CartesianGrid horizontal={false} stroke={GRID} />
+              <XAxis type="number" tick={AXIS} tickFormatter={yTick} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey={x} tick={AXIS} width={120} tickFormatter={humanizeValue} interval={0} axisLine={false} tickLine={false} />
+              <Tooltip formatter={tooltipValue} labelFormatter={humanizeValue} cursor={{ fill: '#f3f5f4' }} />
+              {series.length > 1 && <Legend />}
+              {series.map((s, i) => (
+                <Bar key={s} dataKey={s} name={humanize(s)} fill={PALETTE[i % PALETTE.length]} radius={[0, 4, 4, 0]} barSize={14} />
+              ))}
+            </BarChart>
+          ) : chartType === 'bar' ? (
             <BarChart data={rows} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey={x} tick={{ fontSize: 12 }} tickFormatter={humanizeValue} />
-              <YAxis tick={{ fontSize: 12 }} width={72} tickFormatter={yTick} />
-              <Tooltip formatter={tooltipValue} labelFormatter={humanizeValue} />
+              <CartesianGrid vertical={false} stroke={GRID} />
+              <XAxis dataKey={x} tick={AXIS} tickFormatter={humanizeValue} axisLine={false} tickLine={false} />
+              <YAxis tick={AXIS} width={72} tickFormatter={yTick} axisLine={false} tickLine={false} />
+              <Tooltip formatter={tooltipValue} labelFormatter={humanizeValue} cursor={{ fill: '#f3f5f4' }} />
               {series.length > 1 && <Legend />}
               {series.map((s, i) => (
                 <Bar
@@ -71,9 +87,9 @@ export function Chart({
             </BarChart>
           ) : (
             <LineChart data={rows} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey={x} tick={{ fontSize: 12 }} tickFormatter={humanizeValue} />
-              <YAxis tick={{ fontSize: 12 }} width={72} tickFormatter={yTick} />
+              <CartesianGrid vertical={false} stroke={GRID} />
+              <XAxis dataKey={x} tick={AXIS} tickFormatter={humanizeValue} axisLine={false} tickLine={false} minTickGap={16} />
+              <YAxis tick={AXIS} width={72} tickFormatter={yTick} axisLine={false} tickLine={false} />
               <Tooltip formatter={tooltipValue} labelFormatter={humanizeValue} />
               {series.length > 1 && <Legend />}
               {series.map((s, i) => (
@@ -83,7 +99,7 @@ export function Chart({
                   dataKey={s}
                   name={humanize(s)}
                   stroke={PALETTE[i % PALETTE.length]}
-                  strokeWidth={2}
+                  strokeWidth={2.5}
                   dot={false}
                 />
               ))}

@@ -13,25 +13,104 @@ type FinalResult =
   | { ok: false; error: string; log?: LogEntry[]; attempts?: number; drafts?: Draft[] };
 
 const DOT: Record<LogEntry['status'], string> = {
-  info: 'bg-zinc-400',
-  success: 'bg-emerald-500',
-  warn: 'bg-amber-500',
-  error: 'bg-red-500',
+  info: 'bg-line',
+  success: 'bg-brand',
+  warn: 'bg-gold',
+  error: 'bg-[#b5523b]',
 };
+
+const STAGES = ['Model writes HTML', 'Tags checked', 'SQL runs', 'Dashboard ready'];
+type StageState = 'idle' | 'active' | 'done' | 'failed';
+
+/**
+ * Where the run is, read from the streamed log. Each attempt opens with an info
+ * line, then: warn = draft rejected at the tag check, success = tags passed,
+ * then success/warn for the SQL. An error right after the opener = model call failed.
+ */
+function pipelineState(log: LogEntry[], loading: boolean): { states: StageState[]; attempt: number } {
+  const states: StageState[] = ['idle', 'idle', 'idle', 'idle'];
+  const starts = log.flatMap((e, i) => (e.status === 'info' ? [i] : []));
+  if (!starts.length) return { states, attempt: 0 };
+  const seg = log.slice(starts[starts.length - 1]);
+  const [, check, sql] = seg;
+  if (!check) states[0] = loading ? 'active' : 'idle';
+  else if (check.status === 'error') states[0] = 'failed';
+  else {
+    states[0] = 'done';
+    if (check.status === 'warn') states[1] = 'failed';
+    else {
+      states[1] = 'done';
+      if (!sql) states[2] = 'active';
+      else if (sql.status === 'success') states[2] = states[3] = 'done';
+      else states[2] = 'failed';
+    }
+  }
+  return { states, attempt: starts.length };
+}
+
+function Pipeline({ log, loading }: { log: LogEntry[]; loading: boolean }) {
+  const { states, attempt } = pipelineState(log, loading);
+  return (
+    <div>
+      <ol className="grid grid-cols-4">
+        {STAGES.map((label, i) => {
+          const st = states[i];
+          const lineOn = i > 0 && states[i - 1] === 'done';
+          return (
+            <li key={label} className="relative flex flex-col items-center text-center">
+              {i > 0 && (
+                <span
+                  aria-hidden
+                  className={`absolute top-4 h-0.5 transition-colors duration-500 motion-reduce:transition-none ${lineOn ? 'bg-brand' : 'bg-line'}`}
+                  style={{ width: 'calc(100% - 2rem)', right: 'calc(50% + 1rem)' }}
+                />
+              )}
+              <span
+                className={`relative grid h-8 w-8 place-items-center rounded-full border-2 text-sm font-semibold transition-colors duration-500 motion-reduce:transition-none ${
+                  st === 'done'
+                    ? 'border-brand bg-brand text-white'
+                    : st === 'active'
+                      ? 'border-brand bg-white text-brand'
+                      : st === 'failed'
+                        ? 'border-gold bg-gold text-white'
+                        : 'border-line bg-white text-muted'
+                }`}
+              >
+                {st === 'active' && (
+                  <span aria-hidden className="absolute inset-0 animate-ping rounded-full border-2 border-brand opacity-40 motion-reduce:hidden" />
+                )}
+                {st === 'done' ? '✓' : st === 'failed' ? '✕' : i + 1}
+              </span>
+              <span className={`mt-2 px-1 text-xs leading-4 sm:text-sm ${st === 'idle' ? 'text-muted' : 'font-medium text-ink'}`}>
+                {label}
+              </span>
+              <span className="sr-only">{st}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {attempt > 1 && (
+        <p className="mt-4 rounded-lg bg-gold/10 px-3 py-2 text-sm text-ink">
+          Attempt {attempt} of 2. The first draft broke a rule, so the exact error went back to the model.
+        </p>
+      )}
+    </div>
+  );
+}
 
 function StatusLog({ log, loading }: { log: LogEntry[]; loading: boolean }) {
   return (
-    <ol className="space-y-2 rounded-xl border border-zinc-200 bg-white p-4 text-sm shadow-sm">
+    <ol className="space-y-1.5 text-sm">
       {log.map((e, i) => {
         const isActive = loading && i === log.length - 1;
         return (
-          <li key={i} className="flex items-start gap-2">
+          <li key={i} className="flex items-start gap-2.5">
             {isActive ? (
-              <span className="mt-0.5 h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600" />
+              <span className="mt-1 h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-line border-t-brand motion-reduce:animate-none" />
             ) : (
               <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${DOT[e.status]}`} />
             )}
-            <span className={`text-zinc-700 ${isActive ? 'font-medium' : ''}`}>{e.message}</span>
+            <span className={`break-words text-muted ${isActive ? 'font-medium text-ink' : ''}`}>{e.message}</span>
           </li>
         );
       })}
@@ -42,22 +121,22 @@ function StatusLog({ log, loading }: { log: LogEntry[]; loading: boolean }) {
 /** The model's own output for each attempt, so a reader can check what the validator saw. */
 function ModelOutput({ drafts }: { drafts: Draft[] }) {
   return (
-    <details className="rounded-xl border border-zinc-200 bg-white shadow-sm">
-      <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-zinc-700">
+    <details className="group rounded-2xl border border-line bg-white">
+      <summary className="cursor-pointer select-none rounded-2xl px-5 py-4 text-sm font-medium text-ink hover:bg-canvas/60">
         Show the model’s HTML ({drafts.length} attempt{drafts.length === 1 ? '' : 's'})
       </summary>
-      <div className="space-y-4 border-t border-zinc-200 p-4">
+      <div className="space-y-4 border-t border-line p-5">
         {drafts.map((d, i) => (
-          <div key={i} className={`rounded-lg border p-3 ${d.error ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}`}>
-            <p className={`text-xs font-semibold uppercase tracking-wide ${d.error ? 'text-red-700' : 'text-emerald-700'}`}>
+          <div key={i} className={`rounded-xl border p-4 ${d.error ? 'border-gold/40 bg-gold/5' : 'border-brand/30 bg-brand-soft/50'}`}>
+            <p className={`text-sm font-semibold ${d.error ? 'text-[#8a5a00]' : 'text-brand'}`}>
               Attempt {i + 1}: {d.error ? 'rejected' : 'accepted'}
             </p>
-            {d.error && <p className="mt-1 text-sm text-red-700">{d.error}</p>}
-            <pre className="mt-2 overflow-x-auto rounded bg-zinc-900 p-3 text-xs leading-5 text-zinc-100">{d.html}</pre>
+            {d.error && <p className="mt-1 text-sm text-ink">{d.error}</p>}
+            <pre className="mt-3 max-h-80 overflow-auto rounded-lg bg-ink p-3 font-mono text-xs leading-5 text-[#e6ece9]">{d.html}</pre>
             {d.queries && d.queries.length > 0 && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-xs text-zinc-600">SQL ({d.queries.length} quer{d.queries.length === 1 ? 'y' : 'ies'})</summary>
-                <pre className="mt-2 overflow-x-auto rounded bg-zinc-900 p-3 text-xs leading-5 text-zinc-100">
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm text-muted hover:text-ink">SQL ({d.queries.length} quer{d.queries.length === 1 ? 'y' : 'ies'})</summary>
+                <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-ink p-3 font-mono text-xs leading-5 text-[#e6ece9]">
                   {d.queries.map((q) => `-- ${q.id}\n${q.sql.trim()}`).join('\n\n')}
                 </pre>
               </details>
@@ -72,13 +151,13 @@ function ModelOutput({ drafts }: { drafts: Draft[] }) {
 function Skeleton() {
   return (
     <div className="space-y-4" aria-hidden>
-      <div className="h-7 w-64 animate-pulse rounded bg-zinc-200" />
+      <div className="h-8 w-72 animate-pulse rounded-lg bg-line/70" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="h-24 animate-pulse rounded-xl bg-zinc-200" />
+          <div key={i} className="h-28 animate-pulse rounded-2xl bg-line/70" />
         ))}
       </div>
-      <div className="h-72 animate-pulse rounded-xl bg-zinc-200" />
+      <div className="h-72 animate-pulse rounded-2xl bg-line/70" />
     </div>
   );
 }
@@ -145,69 +224,86 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen w-full bg-zinc-50 px-6 py-10">
+    <main className="min-h-screen w-full px-4 py-10 sm:px-6 sm:py-14">
       <div className="mx-auto max-w-5xl">
-        <header className="mb-6">
-          <h1 className="text-2xl font-bold text-zinc-900">Olist Dashboard Agent</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Ask a question in plain English. The model writes the dashboard as HTML from a
-            closed set of tags; we check every tag, run its SQL, and retry once if anything fails.
+        <header className="mb-8 max-w-3xl">
+          <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">Olist Dashboard Agent</h1>
+          <p className="mt-3 text-base leading-7 text-muted">
+            Ask a question about a Brazilian online marketplace in plain English. The model writes the
+            dashboard as HTML from a closed set of tags, every tag is checked, its SQL runs against
+            the data, and a broken draft goes back to the model once with the exact error.
+          </p>
+          <p className="mt-3 text-sm text-muted">
+            Data: a 4,000-order sample of the public Olist dataset.{' '}
+            <a
+              href="https://github.com/techbyhemant/olist-dashboard-agent"
+              className="font-medium text-brand underline decoration-brand/30 underline-offset-4 hover:decoration-brand"
+            >
+              Source on GitHub
+            </a>
           </p>
         </header>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit(question);
-          }}
-          className="flex gap-2"
-        >
-          <input
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="e.g. Top product categories by revenue"
-            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-zinc-900 shadow-sm outline-none focus:border-zinc-500"
-            disabled={loading}
-          />
-          <button
-            type="submit"
-            disabled={loading || !question.trim()}
-            className="rounded-lg bg-zinc-900 px-5 py-2.5 font-medium text-white disabled:opacity-40"
+        <div className="rounded-2xl border border-line bg-white p-4 sm:p-5">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submit(question);
+            }}
+            className="flex flex-col gap-2 sm:flex-row"
           >
-            {loading ? 'Generating…' : 'Generate'}
-          </button>
-        </form>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          {EXAMPLES.map((ex) => (
-            <button
-              key={ex}
-              onClick={() => {
-                setQuestion(ex);
-                void submit(ex);
-              }}
+            <label htmlFor="q" className="sr-only">Your question</label>
+            <input
+              id="q"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="e.g. Top product categories by revenue"
+              className="min-w-0 flex-1 rounded-xl border border-line bg-canvas/50 px-4 py-3 text-ink outline-none placeholder:text-muted/70 focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
               disabled={loading}
-              className="rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-100 disabled:opacity-40"
+            />
+            <button
+              type="submit"
+              disabled={loading || !question.trim()}
+              className="rounded-xl bg-brand px-6 py-3 font-semibold text-white hover:bg-[#0b6a4d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-40"
             >
-              {ex}
+              {loading ? 'Building…' : 'Build dashboard'}
             </button>
-          ))}
+          </form>
+
+          <p className="mt-5 mb-2 text-sm text-muted">Or pick one of these:</p>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {EXAMPLES.map((ex) => (
+              <button
+                key={ex}
+                onClick={() => {
+                  setQuestion(ex);
+                  void submit(ex);
+                }}
+                disabled={loading}
+                className={`rounded-xl border px-4 py-3 text-left text-sm leading-5 transition-colors hover:border-brand hover:bg-brand-soft/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-50 ${
+                  question === ex ? 'border-brand bg-brand-soft/50 text-ink' : 'border-line text-ink'
+                }`}
+              >
+                {ex}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <section className="mt-8 space-y-6">
+        <section className="mt-6 rounded-2xl border border-line bg-white p-4 sm:p-6" aria-label="What the system did">
+          <Pipeline log={log} loading={loading} />
           {log.length > 0 && (
-            <div>
-              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-                What the system did
-              </h2>
+            <div className="mt-5 border-t border-line pt-4">
               <StatusLog log={log} loading={loading} />
             </div>
           )}
+        </section>
 
+        <section className="mt-8 space-y-6">
           {loading && !res && <Skeleton />}
 
           {res?.ok === false && (
-            <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <p className="rounded-2xl border border-gold/40 bg-gold/10 p-4 text-sm text-ink">
               Couldn’t build a valid dashboard: {res.error}
             </p>
           )}

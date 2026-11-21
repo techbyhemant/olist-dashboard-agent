@@ -12,7 +12,7 @@ export function TileGroup({
 }) {
   return (
     <section>
-      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+      <h3 className="mb-3 text-base font-semibold text-ink">
         {title}
       </h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
