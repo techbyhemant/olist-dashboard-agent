@@ -1,5 +1,7 @@
 # Olist Dashboard Agent
 
+[![The live demo answering "Which states have the slowest deliveries and lowest review scores?"](docs/demo.png)](https://olist-dashboard-agent.vercel.app)
+
 Ask a plain-English question about the Olist Brazilian e-commerce dataset and get
 back a **validated, real dashboard**. The model writes the dashboard as HTML in a
 small closed set of tags, plus the DuckDB SQL behind each widget. Every tag,

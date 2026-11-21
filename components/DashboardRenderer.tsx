@@ -61,9 +61,13 @@ export function DashboardRenderer({
     });
   }
 
+  // the model often repeats the title as its own <h2>; show it once
+  const hasTitle = (list: LayoutNode[]): boolean =>
+    list.some((n) => (n.kind === 'text' ? n.tag === 'h2' && n.text === spec.title : n.kind !== 'widget' && hasTitle(n.children)));
+
   return (
     <div className="flex flex-col gap-6">
-      <h2 className="text-xl font-semibold text-zinc-900">{spec.title}</h2>
+      {!hasTitle(nodes) && <h2 className="text-xl font-semibold text-zinc-900">{spec.title}</h2>}
       {render(nodes)}
     </div>
   );
