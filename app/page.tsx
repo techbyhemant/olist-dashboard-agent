@@ -118,27 +118,32 @@ function StatusLog({ log, loading }: { log: LogEntry[]; loading: boolean }) {
   );
 }
 
+// long model lines wrap instead of scrolling sideways
+const PRE = 'mt-3 max-h-80 overflow-auto rounded-lg bg-ink p-3 font-mono text-xs leading-5 break-words whitespace-pre-wrap text-[#e6ece9]';
+
 /** The model's own output for each attempt, so a reader can check what the validator saw. */
 function ModelOutput({ drafts }: { drafts: Draft[] }) {
   return (
     <details className="group rounded-2xl border border-line bg-white">
-      <summary className="cursor-pointer select-none rounded-2xl px-5 py-4 text-sm font-medium text-ink hover:bg-canvas/60">
+      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl px-5 py-4 text-sm font-medium text-ink select-none hover:bg-canvas/60 group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="text-muted transition-transform group-open:rotate-90 motion-reduce:transition-none">›</span>
         Show the model’s HTML ({drafts.length} attempt{drafts.length === 1 ? '' : 's'})
       </summary>
-      <div className="space-y-4 border-t border-line p-5">
+      <div className="space-y-4 border-t border-line p-4 sm:p-5">
         {drafts.map((d, i) => (
           <div key={i} className={`rounded-xl border p-4 ${d.error ? 'border-gold/40 bg-gold/5' : 'border-brand/30 bg-brand-soft/50'}`}>
             <p className={`text-sm font-semibold ${d.error ? 'text-[#8a5a00]' : 'text-brand'}`}>
               Attempt {i + 1}: {d.error ? 'rejected' : 'accepted'}
             </p>
-            {d.error && <p className="mt-1 text-sm text-ink">{d.error}</p>}
-            <pre className="mt-3 max-h-80 overflow-auto rounded-lg bg-ink p-3 font-mono text-xs leading-5 text-[#e6ece9]">{d.html}</pre>
+            {d.error && <p className="mt-1 text-sm break-words text-ink">{d.error}</p>}
+            <pre className={PRE}>{d.html}</pre>
             {d.queries && d.queries.length > 0 && (
-              <details className="mt-3">
-                <summary className="cursor-pointer text-sm text-muted hover:text-ink">SQL ({d.queries.length} quer{d.queries.length === 1 ? 'y' : 'ies'})</summary>
-                <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-ink p-3 font-mono text-xs leading-5 text-[#e6ece9]">
-                  {d.queries.map((q) => `-- ${q.id}\n${q.sql.trim()}`).join('\n\n')}
-                </pre>
+              <details className="group/sql mt-3">
+                <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted select-none hover:text-ink [&::-webkit-details-marker]:hidden">
+                  <span aria-hidden className="transition-transform group-open/sql:rotate-90 motion-reduce:transition-none">›</span>
+                  SQL ({d.queries.length} quer{d.queries.length === 1 ? 'y' : 'ies'})
+                </summary>
+                <pre className={PRE}>{d.queries.map((q) => `-- ${q.id}\n${q.sql.trim()}`).join('\n\n')}</pre>
               </details>
             )}
           </div>
@@ -299,6 +304,7 @@ export default function Home() {
           )}
         </section>
 
+        {(loading || res) && (
         <section className="mt-8 space-y-6">
           {loading && !res && <Skeleton />}
 
@@ -312,6 +318,22 @@ export default function Home() {
 
           {res?.drafts && res.drafts.length > 0 && <ModelOutput drafts={res.drafts} />}
         </section>
+        )}
+
+        <footer className="mt-12 flex flex-col gap-2 border-t border-line pt-6 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            Built by{' '}
+            <a href="https://hemantbhankhar.com" className="font-medium text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
+              Hemant Bhankhar
+            </a>
+          </p>
+          <a
+            href="https://github.com/techbyhemant/olist-dashboard-agent"
+            className="font-medium text-brand underline decoration-brand/30 underline-offset-4 hover:decoration-brand"
+          >
+            Source on GitHub
+          </a>
+        </footer>
       </div>
     </main>
   );

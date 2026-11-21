@@ -48,9 +48,10 @@ export function DashboardRenderer({
         case 'text':
           if (n.tag === 'h2' && n.text === spec.title)
             return <h2 key={k} className="text-2xl font-bold tracking-tight text-ink">{n.text}</h2>;
-          if (n.tag === 'h2') return <h3 key={k} className="text-lg font-semibold text-ink">{n.text}</h3>;
-          if (n.tag === 'h3') return <h4 key={k} className="text-base font-semibold text-ink">{n.text}</h4>;
-          return <p key={k} className="max-w-prose text-sm leading-6 text-muted">{n.text}</p>;
+          // text sits closer to the widget it introduces than widgets sit to each other
+          if (n.tag === 'h2') return <h3 key={k} className="-mb-3 text-lg font-semibold text-ink">{n.text}</h3>;
+          if (n.tag === 'h3') return <h4 key={k} className="-mb-3 text-base font-semibold text-ink">{n.text}</h4>;
+          return <p key={k} className="-mb-2 max-w-prose text-sm leading-6 text-muted">{n.text}</p>;
         case 'row':
           return (
             <div key={k} className="grid gap-6 sm:grid-cols-[repeat(auto-fit,minmax(16rem,1fr))]">

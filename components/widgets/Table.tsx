@@ -38,7 +38,10 @@ export function Table({
     <section className="rounded-2xl border border-line bg-white p-5">
       <div className="mb-3 flex items-baseline justify-between gap-4">
         <h3 className="text-base font-semibold text-ink">{title}</h3>
-        <span className="shrink-0 text-xs text-muted">{rows.length} rows</span>
+        <span className="shrink-0 text-xs text-muted">
+          {/* about 9 rows fit the box; past that, say it scrolls */}
+          {rows.length} rows{rows.length > 9 ? ', scroll for all' : ''}
+        </span>
       </div>
       {/* fixed height with its own scroll, so a long result never stretches the page */}
       <div className="max-h-96 overflow-auto rounded-lg border border-line">
