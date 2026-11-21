@@ -1,5 +1,5 @@
 import { it } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,6 +31,7 @@ class ClaudeCliGenerator implements SpecGenerator {
  * which the public demo replays (RECORDED_RUNS=1). Costs tokens, so it only runs on:
  *   npm run record                    (needs ANTHROPIC_API_KEY in .env.local)
  *   RECORD_VIA=cli npm run record     (uses your Claude Code login instead)
+ * Questions that already have a recording are kept; RECORD_ALL=1 records them again.
  */
 it.skipIf(process.env.RECORD_RUNS !== '1')(
   'records the example runs',
@@ -39,8 +40,13 @@ it.skipIf(process.env.RECORD_RUNS !== '1')(
       process.loadEnvFile('.env.local');
     } catch {}
     const api: SpecGenerator = process.env.RECORD_VIA === 'cli' ? new ClaudeCliGenerator() : new MessagesApiGenerator();
+    const saved = JSON.parse(readFileSync('lib/recorded-runs.json', 'utf8')) as { runs: Record<string, string[]> };
     const runs: Record<string, string[]> = {};
     for (const q of EXAMPLES) {
+      if (process.env.RECORD_ALL !== '1' && saved.runs[q]) {
+        runs[q] = saved.runs[q];
+        continue;
+      }
       const outputs: string[] = [];
       const recorder: SpecGenerator = {
         name: api.name,

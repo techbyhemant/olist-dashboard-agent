@@ -378,7 +378,7 @@ export default function Home() {
           </form>
 
           <p className="mt-5 mb-2 text-sm text-muted">Or pick one of these:</p>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             {EXAMPLES.map((ex) => (
               <button
                 key={ex}
