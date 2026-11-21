@@ -139,6 +139,7 @@ npm run explore          # regenerate scripts/exploration.md from the CSVs
 npm run dev              # http://localhost:3051
 npm test                 # vitest: schema + DuckDB loop evals (MOCK_LLM, no spend)
 npm run record           # call the real model for the example questions → lib/recorded-runs.json
+RECORD_VIA=cli npm run record  # same, through your Claude Code login instead of an API key
 ```
 
 Auth: the route calls the Anthropic Messages API (`@anthropic-ai/sdk`). Set a
