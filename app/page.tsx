@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import type { DashboardSpec } from '@/lib/spec';
 import type { WidgetData } from '@/lib/run';
+import type { LayoutNode } from '@/lib/layout';
 import type { LogEntry, StreamEvent } from '@/lib/generateDashboard';
 import { DashboardRenderer } from '@/components/DashboardRenderer';
 
 type FinalResult =
-  | { ok: true; spec: DashboardSpec; data: WidgetData[]; log: LogEntry[]; attempts: number }
+  | { ok: true; spec: DashboardSpec; layout: LayoutNode[]; data: WidgetData[]; log: LogEntry[]; attempts: number }
   | { ok: false; error: string; log?: LogEntry[]; attempts?: number };
 
 const EXAMPLES = [
@@ -124,8 +125,8 @@ export default function Home() {
         <header className="mb-6">
           <h1 className="text-2xl font-bold text-zinc-900">Olist Dashboard Agent</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Ask a question in plain English. The model returns a typed spec; we validate
-            it and run its SQL, retrying once if anything fails.
+            Ask a question in plain English. The model writes the dashboard as HTML from a
+            closed set of tags; we check every tag, run its SQL, and retry once if anything fails.
           </p>
         </header>
 
@@ -186,7 +187,7 @@ export default function Home() {
             </p>
           )}
 
-          {res?.ok === true && <DashboardRenderer spec={res.spec} data={res.data} />}
+          {res?.ok === true && <DashboardRenderer spec={res.spec} data={res.data} layout={res.layout} />}
         </section>
       </div>
     </main>

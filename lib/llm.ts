@@ -20,7 +20,7 @@ export interface GenInput {
 
 export interface SpecGenerator {
   readonly name: string;
-  /** Returns the raw model text (expected to be a JSON object). */
+  /** Returns the raw model text (expected to be a JSON object: title, queries, html). */
   generate(input: GenInput): Promise<string>;
 }
 
@@ -49,8 +49,8 @@ class MessagesApiGenerator implements SpecGenerator {
       ? buildRetryPrompt(question, priorError)
       : buildUserPrompt(question);
 
-    // Single-turn inference. No tools, no thinking: the model returns a JSON
-    // spec as text, which the pipeline parses + validates (Zod) + retries. The
+    // Single-turn inference. No tools, no thinking: the model returns JSON with
+    // queries + closed-vocabulary html, which the pipeline parses, checks and retries. The
     // retry loop is why we don't need structured outputs (unsupported on
     // Sonnet 4.6 anyway).
     const message = await client.messages.create({
@@ -73,47 +73,35 @@ class MessagesApiGenerator implements SpecGenerator {
 
 /**
  * Deterministic mock. To make the retry loop observable end-to-end without a
- * model, it returns a DELIBERATELY broken spec on the first attempt (priorError
- * undefined) and a valid one on the retry. It ignores the question content.
+ * model, it returns a layout that breaks the tag allow-list on the first attempt
+ * (priorError undefined) and a valid one on the retry. It ignores the question.
  */
+const REVENUE_SQL = `SELECT ROUND(SUM(oi.price), 2) AS revenue
+  FROM order_items oi JOIN orders o USING (order_id)
+  WHERE o.order_status = 'delivered'`;
+
 class MockGenerator implements SpecGenerator {
   readonly name = 'mock';
 
   async generate({ priorError }: GenInput): Promise<string> {
     if (!priorError) {
-      // metric "revenue" but SQL aliases the column "total" -> runSpec shape check fails.
+      // <div class="grid"> is outside the vocabulary -> the allow-list rejects it.
       return JSON.stringify({
         title: 'Mock dashboard',
-        widgets: [
-          {
-            type: 'tile',
-            title: 'Total revenue (delivered)',
-            metric: 'revenue',
-            sql: `SELECT ROUND(SUM(oi.price), 2) AS total
-                  FROM order_items oi JOIN orders o USING (order_id)
-                  WHERE o.order_status = 'delivered'`,
-          },
-        ],
+        queries: [{ id: 'q_revenue', sql: REVENUE_SQL }],
+        html: `<div class="grid"><kpi-tile title="Total revenue (delivered)" query="q_revenue" metric="revenue"></kpi-tile></div>`,
       });
     }
-    // Corrected: alias matches the metric, plus a valid bar chart.
     return JSON.stringify({
       title: 'Mock dashboard (corrected)',
-      widgets: [
+      queries: [
+        { id: 'q_revenue', sql: REVENUE_SQL },
         {
-          type: 'tile',
-          title: 'Total revenue (delivered)',
-          metric: 'revenue',
-          sql: `SELECT ROUND(SUM(oi.price), 2) AS revenue
-                FROM order_items oi JOIN orders o USING (order_id)
-                WHERE o.order_status = 'delivered'`,
+          id: 'q_orders',
+          sql: `SELECT COUNT(DISTINCT order_id) AS orders FROM orders WHERE order_status = 'delivered'`,
         },
         {
-          type: 'chart',
-          chartType: 'bar',
-          title: 'Top categories by revenue',
-          x: 'category',
-          series: ['revenue'],
+          id: 'q_top',
           sql: `SELECT t.product_category_name_english AS category,
                        ROUND(SUM(oi.price), 2) AS revenue
                 FROM order_items oi
@@ -124,6 +112,12 @@ class MockGenerator implements SpecGenerator {
                 GROUP BY 1 ORDER BY revenue DESC LIMIT 8`,
         },
       ],
+      html: `<p>Revenue and order count for delivered orders, then the categories that bring in the most.</p>
+<grid-row>
+  <kpi-tile title="Total revenue (delivered)" query="q_revenue" metric="revenue"></kpi-tile>
+  <kpi-tile title="Delivered orders" query="q_orders" metric="orders"></kpi-tile>
+</grid-row>
+<bar-chart title="Top categories by revenue" query="q_top" x="category" series="revenue"></bar-chart>`,
     });
   }
 }

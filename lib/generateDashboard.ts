@@ -1,9 +1,10 @@
-import { validateSpec, type DashboardSpec } from './spec';
+import type { DashboardSpec } from './spec';
+import { parseLayout, type LayoutNode } from './layout';
 import { runSpec, WidgetRunError, type WidgetData } from './run';
 import { getGenerator, type SpecGenerator } from './llm';
 
 /**
- * THE CORE FEATURE: one-shot generate -> validate -> run SQL -> (on any failure)
+ * THE CORE FEATURE: one-shot generate -> validate the html layout + spec -> run SQL -> (on any failure)
  * feed the specific error back to the model ONCE -> re-validate. After one retry,
  * fail gracefully.
  *
@@ -22,7 +23,7 @@ export interface LogEntry {
 }
 
 export type GenerateResult =
-  | { ok: true; spec: DashboardSpec; data: WidgetData[]; log: LogEntry[]; attempts: number }
+  | { ok: true; spec: DashboardSpec; layout: LayoutNode[]; data: WidgetData[]; log: LogEntry[]; attempts: number }
   | { ok: false; error: string; log: LogEntry[]; attempts: number };
 
 export type StreamEvent =
@@ -63,7 +64,7 @@ export async function* streamDashboard(
       'info',
       retrying
         ? `Retrying with the error fed back to the model (attempt ${attempt}/${MAX_ATTEMPTS})…`
-        : `Generating dashboard spec (${generator.name})…`,
+        : `Generating dashboard (${generator.name})…`,
     );
 
     // 1. Generate
@@ -86,24 +87,24 @@ export async function* streamDashboard(
       continue;
     }
 
-    // 3. Validate against the Zod contract
-    const validated = validateSpec(parsed.value);
+    // 3. Validate the envelope, the html allow-list and the widget contract
+    const validated = parseLayout(parsed.value);
     if (!validated.ok) {
-      priorError = `Spec failed schema validation — ${validated.error}`;
+      priorError = `Layout failed validation — ${validated.error}`;
       yield step('warn', priorError);
       if (retrying) break;
       continue;
     }
     yield step(
       'success',
-      `Spec valid: "${validated.spec.title}" with ${validated.spec.widgets.length} widget(s).`,
+      `Layout valid: "${validated.spec.title}" with ${validated.spec.widgets.length} widget(s).`,
     );
 
     // 4. Execute each widget's SQL (validates non-empty + correct-shaped rows)
     try {
       const data = await runSpec(validated.spec);
       yield step('success', 'All widget SQL executed and returned rows. ✓');
-      yield { type: 'result', result: { ok: true, spec: validated.spec, data, log, attempts: attempt } };
+      yield { type: 'result', result: { ok: true, spec: validated.spec, layout: validated.layout, data, log, attempts: attempt } };
       return;
     } catch (e) {
       const detail = e instanceof WidgetRunError ? e.message : (e as Error).message;

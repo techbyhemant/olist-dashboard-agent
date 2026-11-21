@@ -36,55 +36,65 @@ RULES THE SQL MUST RESPECT:
 `.trim();
 
 const CONTRACT = `
-You output ONLY a JSON object (a DashboardSpec). No prose, no markdown fences.
+You output ONLY a JSON object. No prose, no markdown fences.
 
-DashboardSpec = { "title": string, "widgets": Widget[] }   // vertical stack; NO layout/grid fields
-Widget is one of (discriminated by "type"):
-- { "type":"tile",      "title":string, "metric":string, "sql":string, "delta"?:{ "sql":string, "label":string } }
-- { "type":"tileGroup", "title":string, "tiles": Tile[] }      // Tile = same fields as a tile minus "type"
-- { "type":"chart",     "chartType":"bar"|"line", "title":string, "sql":string, "x":string, "series":string[] }
-- { "type":"table",     "title":string, "sql":string, "columns":string[] }
+{ "title": string,
+  "queries": [ { "id": string, "sql": string } ],   // id: lowercase letters, digits, _ (e.g. "q_revenue")
+  "html": string }                                 // the dashboard layout, written in the tags below
 
-Field semantics (CRITICAL — these must line up with the SQL result columns):
-- tile.metric  = the exact column name in that tile's SQL result to show as the big number.
-                 The tile SQL must return ONE row containing that column.
-- tile.delta   = optional; its SQL returns ONE row with a single number (the change). label describes it.
-- chart.x      = result column for the x-axis/category. chart.series = result column(s) to plot.
-- table.columns= result column names to show, in order.
-- Each widget runs its OWN sql. Column names you reference (metric/x/series/columns) MUST exist in the
-  result of that widget's sql (alias them in SELECT to match).
-- Prefer a tileGroup for 2-4 related KPIs; a bar chart for category comparisons; a line chart for
-  time series (x = a month/day string); a table for multi-column breakdowns.
+The html may use ONLY these tags. Anything else (div, span, script, style, a, img, svg, any other tag,
+and any attribute not listed) is rejected. Attributes are written name="value". No SQL inside the html.
+
+Layout and text (no attributes):
+  <section>...</section>      a vertical group
+  <grid-row>...</grid-row>    places its children side by side (use for 2-4 tiles or 2 charts)
+  <h2>, <h3>, <p>             short headings and one-sentence notes; plain text only, nothing nested
+Widgets (leaf elements; write <tag ...></tag> or <tag ... />):
+  <kpi-tile title="" query="" metric="" [delta-query="" delta-label=""]>
+  <kpi-group title="">  <kpi-tile .../> ... </kpi-group>    a titled card of 2-4 kpi-tiles, nothing else inside
+  <bar-chart  title="" query="" x="" series="">             series is comma-separated column names
+  <line-chart title="" query="" x="" series="">             x = a month/day string
+  <data-table title="" query="" columns="">                 columns is comma-separated, in display order
+
+Rules that must line up with the SQL result columns:
+- query / delta-query = the id of one entry in "queries". Every widget runs that query.
+- kpi-tile metric = the exact result column shown as the big number; its query returns ONE row.
+- delta-query returns ONE row with a single number (the change); delta-label describes it.
+- x / series / columns = result column names of that query (alias them in SELECT to match).
+- Text outside <h2>, <h3> or <p> is rejected.
+- Prefer kpi tiles in a grid-row or kpi-group for 2-4 related numbers, a bar chart for category
+  comparisons, a line chart for time series, and a table for multi-column breakdowns.
 `.trim();
 
 export function buildSystemPrompt(): string {
   return `You are a dashboard generator for an Olist Brazilian e-commerce dataset.
 Given an operator's plain-English question, design a small, useful dashboard and
-return it as a typed JSON spec whose SQL runs on DuckDB.
+return it as named DuckDB queries plus an HTML layout written in a closed tag vocabulary.
 
 ${SCHEMA_SUMMARY}
 
 ${CONTRACT}
 
 Keep it focused: 1-4 widgets that directly answer the question. Always alias SQL
-output columns to match the metric/x/series/columns names you put in the spec.
+output columns to match the metric/x/series/columns names you put in the html.
 Return ONLY the JSON object.`;
 }
 
 /** First-attempt user message. */
 export function buildUserPrompt(question: string): string {
-  return `Operator question: ${question}\n\nReturn the DashboardSpec JSON now.`;
+  return `Operator question: ${question}\n\nReturn the JSON object (title, queries, html) now.`;
 }
 
 /** Retry message: feeds the specific failure back so the model self-corrects. */
 export function buildRetryPrompt(question: string, priorError: string): string {
   return `Operator question: ${question}
 
-Your previous response was rejected. Fix it and return a corrected DashboardSpec JSON.
+Your previous response was rejected. Fix it and return a corrected JSON object (title, queries, html).
 Failure reason:
 ${priorError}
 
-Common fixes: ensure metric/x/series/columns names EXACTLY match the columns your SQL
+Common fixes: use only the allowed tags and attributes, point every query attribute at an
+existing query id, make metric/x/series/columns names EXACTLY match the columns your SQL
 SELECTs (add aliases), ensure each SQL is a single read-only SELECT that returns rows,
 respect the multi-row-per-order and Portuguese-category rules. Return ONLY the JSON object.`;
 }

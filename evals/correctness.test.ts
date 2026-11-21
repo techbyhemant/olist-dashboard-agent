@@ -59,10 +59,11 @@ describe.skipIf(!DATA_READY)('Layer 2 — spec correctness against real data', (
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // mock fails attempt 1 (SQL shape), succeeds on the retry
+    // mock fails attempt 1 (html allow-list), succeeds on the retry
     expect(result.attempts).toBe(2);
-    expect(result.log.some((e) => e.status === 'warn')).toBe(true);
+    expect(result.log.some((e) => e.status === 'warn' && e.message.includes('<div> is not allowed'))).toBe(true);
     expect(result.log.at(-1)?.status).toBe('success');
     expect(result.data.length).toBe(result.spec.widgets.length);
+    expect(result.layout.some((n) => n.kind === 'row')).toBe(true);
   });
 });

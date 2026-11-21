@@ -1,4 +1,5 @@
 import type { DashboardSpec } from '@/lib/spec';
+import type { LayoutNode } from '@/lib/layout';
 import type { WidgetData } from '@/lib/run';
 import { Tile } from './widgets/Tile';
 import { TileGroup } from './widgets/TileGroup';
@@ -6,45 +7,64 @@ import { Chart } from './widgets/Chart';
 import { Table } from './widgets/Table';
 
 /**
- * Maps a validated spec + its executed data to components, as a vertical stack.
- * spec.widgets[i] is aligned with data[i] (runSpec preserves order).
+ * Walks the validated layout tree and renders our own components. The model's
+ * html is never injected: by now it has been reduced to text nodes, containers
+ * and widget indexes. spec.widgets[i] is aligned with data[i] (runSpec keeps order).
+ * Without a layout (e.g. a hand-written spec) the widgets stack vertically.
  */
 export function DashboardRenderer({
   spec,
   data,
+  layout,
 }: {
   spec: DashboardSpec;
   data: WidgetData[];
+  layout?: LayoutNode[];
 }) {
+  const nodes = layout ?? spec.widgets.map((_, index): LayoutNode => ({ kind: 'widget', index }));
+
+  function widget(i: number) {
+    const w = spec.widgets[i];
+    const d = data[i];
+    switch (w.type) {
+      case 'tile':
+        return d.kind === 'tile' ? <Tile title={w.title} data={d.tile} /> : null;
+      case 'tileGroup':
+        return d.kind === 'tileGroup' ? <TileGroup title={w.title} tileSpecs={w.tiles} data={d.tiles} /> : null;
+      case 'chart':
+        return d.kind === 'rows' ? (
+          <Chart title={w.title} chartType={w.chartType} x={w.x} series={w.series} rows={d.rows} />
+        ) : null;
+      case 'table':
+        return d.kind === 'rows' ? <Table title={w.title} columns={w.columns} rows={d.rows} /> : null;
+    }
+  }
+
+  function render(list: LayoutNode[]) {
+    return list.map((n, k) => {
+      switch (n.kind) {
+        case 'widget':
+          return <div key={k} className="min-w-0">{widget(n.index)}</div>;
+        case 'text':
+          if (n.tag === 'h2') return <h3 key={k} className="text-lg font-semibold text-zinc-900">{n.text}</h3>;
+          if (n.tag === 'h3') return <h4 key={k} className="text-base font-semibold text-zinc-800">{n.text}</h4>;
+          return <p key={k} className="max-w-prose text-sm leading-6 text-zinc-600">{n.text}</p>;
+        case 'row':
+          return (
+            <div key={k} className="grid gap-6 sm:grid-cols-[repeat(auto-fit,minmax(16rem,1fr))]">
+              {render(n.children)}
+            </div>
+          );
+        case 'section':
+          return <section key={k} className="flex flex-col gap-6">{render(n.children)}</section>;
+      }
+    });
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <h2 className="text-xl font-semibold text-zinc-900">{spec.title}</h2>
-      {spec.widgets.map((w, i) => {
-        const d = data[i];
-        switch (w.type) {
-          case 'tile':
-            if (d.kind !== 'tile') return null;
-            return <Tile key={i} title={w.title} data={d.tile} />;
-          case 'tileGroup':
-            if (d.kind !== 'tileGroup') return null;
-            return <TileGroup key={i} title={w.title} tileSpecs={w.tiles} data={d.tiles} />;
-          case 'chart':
-            if (d.kind !== 'rows') return null;
-            return (
-              <Chart
-                key={i}
-                title={w.title}
-                chartType={w.chartType}
-                x={w.x}
-                series={w.series}
-                rows={d.rows}
-              />
-            );
-          case 'table':
-            if (d.kind !== 'rows') return null;
-            return <Table key={i} title={w.title} columns={w.columns} rows={d.rows} />;
-        }
-      })}
+      {render(nodes)}
     </div>
   );
 }

@@ -2,17 +2,16 @@ import { z } from 'zod';
 import { checkSafeSelect } from './sql-safety';
 
 /**
- * THE SPEC CONTRACT.
+ * THE WIDGET CONTRACT.
  *
- * The LLM does not emit HTML or component code — it emits a typed JSON
- * DashboardSpec that we validate with Zod before rendering. Each widget owns the
- * SQL that fetches its own data. Column-name fields (tile.metric, chart.x,
- * chart.series, table.columns) refer to columns in that widget's SQL result.
- *
- * v1 is a vertical stack of widgets — deliberately NO grid/layout fields.
+ * The model writes HTML in a closed vocabulary (lib/layout.ts); that HTML is
+ * converted into this typed list of widgets and validated here with Zod before
+ * any SQL runs. Each widget owns the SQL that fetches its own data. Column-name
+ * fields (tile.metric, chart.x, chart.series, table.columns) refer to columns in
+ * that widget's SQL result. Layout (rows, sections, text) lives in lib/layout.ts.
  */
 
-const sql = z
+export const SqlSchema = z
   .string()
   .min(1, 'sql must be a non-empty string')
   .superRefine((value, ctx) => {
@@ -26,7 +25,7 @@ const sql = z
 /** Optional delta: a second scalar query plus a human label e.g. "vs last month". */
 const DeltaSchema = z
   .object({
-    sql,
+    sql: SqlSchema,
     label: z.string().min(1),
   })
   .strict();
@@ -36,7 +35,7 @@ export const TileSchema = z
   .object({
     title: z.string().min(1),
     metric: z.string().min(1),
-    sql,
+    sql: SqlSchema,
     delta: DeltaSchema.optional(),
   })
   .strict();
@@ -56,7 +55,7 @@ const ChartWidget = z
     type: z.literal('chart'),
     chartType: z.enum(['bar', 'line']),
     title: z.string().min(1),
-    sql,
+    sql: SqlSchema,
     x: z.string().min(1).describe('result column for the x-axis / category'),
     series: z
       .array(z.string().min(1))
@@ -68,7 +67,7 @@ const TableWidget = z
   .object({
     type: z.literal('table'),
     title: z.string().min(1),
-    sql,
+    sql: SqlSchema,
     columns: z.array(z.string().min(1)).min(1, 'table needs at least one column'),
   })
   .strict();
@@ -106,12 +105,12 @@ export type ValidateResult =
 export function validateSpec(raw: unknown): ValidateResult {
   const result = DashboardSpecSchema.safeParse(raw);
   if (result.success) return { ok: true, spec: result.data };
+  return { ok: false, error: formatIssues(result.error) };
+}
 
-  const error = result.error.issues
-    .map((i) => {
-      const path = i.path.length ? i.path.join('.') : '(root)';
-      return `${path}: ${i.message}`;
-    })
+/** Flatten Zod issues into `path: message` pairs the model can act on. */
+export function formatIssues(error: z.ZodError): string {
+  return error.issues
+    .map((i) => `${i.path.length ? i.path.join('.') : '(root)'}: ${i.message}`)
     .join('; ');
-  return { ok: false, error };
 }
