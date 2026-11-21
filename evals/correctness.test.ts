@@ -65,5 +65,12 @@ describe.skipIf(!DATA_READY)('Layer 2 — spec correctness against real data', (
     expect(result.log.at(-1)?.status).toBe('success');
     expect(result.data.length).toBe(result.spec.widgets.length);
     expect(result.layout.some((n) => n.kind === 'row')).toBe(true);
+
+    // each attempt's html is kept, the rejected one with its reason
+    expect(result.drafts).toHaveLength(2);
+    expect(result.drafts[0].html).toContain('<div class="grid">');
+    expect(result.drafts[0].error).toContain('<div> is not allowed');
+    expect(result.drafts[1].error).toBeUndefined();
+    expect(result.drafts[1].queries?.map((q) => q.id)).toEqual(['q_revenue', 'q_orders', 'q_top']);
   });
 });

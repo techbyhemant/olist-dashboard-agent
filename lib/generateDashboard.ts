@@ -22,9 +22,16 @@ export interface LogEntry {
   message: string;
 }
 
+/** What the model wrote on one attempt, and why it was rejected (if it was). */
+export interface Draft {
+  html: string; // the html field, or the raw text when the reply wasn't usable JSON
+  queries?: { id: string; sql: string }[];
+  error?: string;
+}
+
 export type GenerateResult =
-  | { ok: true; spec: DashboardSpec; layout: LayoutNode[]; data: WidgetData[]; log: LogEntry[]; attempts: number }
-  | { ok: false; error: string; log: LogEntry[]; attempts: number };
+  | { ok: true; spec: DashboardSpec; layout: LayoutNode[]; data: WidgetData[]; log: LogEntry[]; attempts: number; drafts: Draft[] }
+  | { ok: false; error: string; log: LogEntry[]; attempts: number; drafts: Draft[] };
 
 export type StreamEvent =
   | { type: 'log'; entry: LogEntry }
@@ -49,6 +56,7 @@ export async function* streamDashboard(
   generator: SpecGenerator = getGenerator(),
 ): AsyncGenerator<StreamEvent, void, unknown> {
   const log: LogEntry[] = [];
+  const drafts: Draft[] = [];
   let priorError: string | undefined;
 
   // Record a step and emit it immediately.
@@ -80,8 +88,14 @@ export async function* streamDashboard(
 
     // 2. Parse JSON
     const parsed = parseSpecJson(rawText);
+    const env = parsed.ok ? (parsed.value as { html?: unknown; queries?: unknown }) : undefined;
+    const draft: Draft =
+      typeof env?.html === 'string'
+        ? { html: env.html, queries: Array.isArray(env.queries) ? (env.queries as Draft['queries']) : undefined }
+        : { html: rawText };
+    drafts.push(draft);
     if (!parsed.ok) {
-      priorError = `Response was not valid JSON: ${parsed.error}`;
+      priorError = draft.error = `Response was not valid JSON: ${parsed.error}`;
       yield step('warn', priorError);
       if (retrying) break;
       continue;
@@ -90,7 +104,7 @@ export async function* streamDashboard(
     // 3. Validate the envelope, the html allow-list and the widget contract
     const validated = parseLayout(parsed.value);
     if (!validated.ok) {
-      priorError = `Layout failed validation — ${validated.error}`;
+      priorError = draft.error = `Layout failed validation — ${validated.error}`;
       yield step('warn', priorError);
       if (retrying) break;
       continue;
@@ -104,11 +118,11 @@ export async function* streamDashboard(
     try {
       const data = await runSpec(validated.spec);
       yield step('success', 'All widget SQL executed and returned rows. ✓');
-      yield { type: 'result', result: { ok: true, spec: validated.spec, layout: validated.layout, data, log, attempts: attempt } };
+      yield { type: 'result', result: { ok: true, spec: validated.spec, layout: validated.layout, data, log, attempts: attempt, drafts } };
       return;
     } catch (e) {
       const detail = e instanceof WidgetRunError ? e.message : (e as Error).message;
-      priorError = `SQL execution failed — ${detail}`;
+      priorError = draft.error = `SQL execution failed — ${detail}`;
       yield step('warn', priorError);
       if (retrying) break;
       continue;
@@ -117,7 +131,7 @@ export async function* streamDashboard(
 
   const finalError = priorError ?? 'Unknown failure';
   yield step('error', `Gave up after ${MAX_ATTEMPTS} attempts. Last error: ${finalError}`);
-  yield { type: 'result', result: { ok: false, error: finalError, log, attempts: MAX_ATTEMPTS } };
+  yield { type: 'result', result: { ok: false, error: finalError, log, attempts: MAX_ATTEMPTS, drafts } };
 }
 
 /** Drain the stream and return the final result (non-streaming callers + evals). */
@@ -129,5 +143,5 @@ export async function generateDashboard(
   for await (const ev of streamDashboard(question, generator)) {
     if (ev.type === 'result') result = ev.result;
   }
-  return result ?? { ok: false, error: 'No result produced', log: [], attempts: 0 };
+  return result ?? { ok: false, error: 'No result produced', log: [], attempts: 0, drafts: [] };
 }

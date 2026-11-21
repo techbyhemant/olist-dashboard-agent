@@ -4,18 +4,13 @@ import { useState } from 'react';
 import type { DashboardSpec } from '@/lib/spec';
 import type { WidgetData } from '@/lib/run';
 import type { LayoutNode } from '@/lib/layout';
-import type { LogEntry, StreamEvent } from '@/lib/generateDashboard';
+import type { Draft, LogEntry, StreamEvent } from '@/lib/generateDashboard';
 import { DashboardRenderer } from '@/components/DashboardRenderer';
+import { EXAMPLES } from '@/lib/examples';
 
 type FinalResult =
-  | { ok: true; spec: DashboardSpec; layout: LayoutNode[]; data: WidgetData[]; log: LogEntry[]; attempts: number }
-  | { ok: false; error: string; log?: LogEntry[]; attempts?: number };
-
-const EXAMPLES = [
-  'What are my top product categories by revenue?',
-  'How has monthly revenue trended over time?',
-  'Which states have the slowest deliveries and lowest review scores?',
-];
+  | { ok: true; spec: DashboardSpec; layout: LayoutNode[]; data: WidgetData[]; log: LogEntry[]; attempts: number; drafts: Draft[] }
+  | { ok: false; error: string; log?: LogEntry[]; attempts?: number; drafts?: Draft[] };
 
 const DOT: Record<LogEntry['status'], string> = {
   info: 'bg-zinc-400',
@@ -41,6 +36,36 @@ function StatusLog({ log, loading }: { log: LogEntry[]; loading: boolean }) {
         );
       })}
     </ol>
+  );
+}
+
+/** The model's own output for each attempt, so a reader can check what the validator saw. */
+function ModelOutput({ drafts }: { drafts: Draft[] }) {
+  return (
+    <details className="rounded-xl border border-zinc-200 bg-white shadow-sm">
+      <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-zinc-700">
+        Show the model’s HTML ({drafts.length} attempt{drafts.length === 1 ? '' : 's'})
+      </summary>
+      <div className="space-y-4 border-t border-zinc-200 p-4">
+        {drafts.map((d, i) => (
+          <div key={i} className={`rounded-lg border p-3 ${d.error ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}`}>
+            <p className={`text-xs font-semibold uppercase tracking-wide ${d.error ? 'text-red-700' : 'text-emerald-700'}`}>
+              Attempt {i + 1}: {d.error ? 'rejected' : 'accepted'}
+            </p>
+            {d.error && <p className="mt-1 text-sm text-red-700">{d.error}</p>}
+            <pre className="mt-2 overflow-x-auto rounded bg-zinc-900 p-3 text-xs leading-5 text-zinc-100">{d.html}</pre>
+            {d.queries && d.queries.length > 0 && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-zinc-600">SQL ({d.queries.length} quer{d.queries.length === 1 ? 'y' : 'ies'})</summary>
+                <pre className="mt-2 overflow-x-auto rounded bg-zinc-900 p-3 text-xs leading-5 text-zinc-100">
+                  {d.queries.map((q) => `-- ${q.id}\n${q.sql.trim()}`).join('\n\n')}
+                </pre>
+              </details>
+            )}
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -188,6 +213,8 @@ export default function Home() {
           )}
 
           {res?.ok === true && <DashboardRenderer spec={res.spec} data={res.data} layout={res.layout} />}
+
+          {res?.drafts && res.drafts.length > 0 && <ModelOutput drafts={res.drafts} />}
         </section>
       </div>
     </main>

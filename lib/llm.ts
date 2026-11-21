@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { buildSystemPrompt, buildUserPrompt, buildRetryPrompt } from './prompt';
+import recordedJson from './recorded-runs.json';
 
 /**
  * Provider boundary for spec generation. Isolating the LLM call here means the
@@ -9,6 +10,8 @@ import { buildSystemPrompt, buildUserPrompt, buildRetryPrompt } from './prompt';
  * Selection:
  *   MOCK_LLM=1            -> deterministic mock (used by evals; also lets the whole
  *                           loop run with no credentials).
+ *   RECORDED_RUNS=1       -> replays real model output saved by `npm run record`
+ *                           (the public demo: real answers, no spend).
  *   otherwise            -> Anthropic Messages API (@anthropic-ai/sdk), authenticated
  *                           with ANTHROPIC_API_KEY. No subprocess, so it deploys on
  *                           serverless (Vercel) unlike the Claude Agent SDK.
@@ -24,10 +27,10 @@ export interface SpecGenerator {
   generate(input: GenInput): Promise<string>;
 }
 
-const DEFAULT_MODEL = process.env.DASHBOARD_MODEL ?? 'claude-sonnet-4-6';
+export const DEFAULT_MODEL = process.env.DASHBOARD_MODEL ?? 'claude-sonnet-4-6';
 const MAX_TOKENS = 8192;
 
-class MessagesApiGenerator implements SpecGenerator {
+export class MessagesApiGenerator implements SpecGenerator {
   readonly name = 'messages-api';
 
   private preflight() {
@@ -122,9 +125,34 @@ class MockGenerator implements SpecGenerator {
   }
 }
 
+/**
+ * Replays what the real model wrote for the example questions (lib/recorded-runs.json).
+ * Only the model's text is replayed: parsing, the allow-list check and the SQL
+ * all run live, so a recorded rejected draft is rejected again here.
+ */
+const recorded = recordedJson as { model: string | null; recordedAt: string | null; runs: Record<string, string[]> };
+const runs = recorded.runs;
+const key = (q: string) => q.trim().toLowerCase();
+const byKey = new Map(Object.entries(runs).map(([q, outputs]) => [key(q), outputs]));
+
+export const replayMode = () => process.env.RECORDED_RUNS === '1';
+export const hasRecording = (question: string) => byKey.has(key(question));
+
+class ReplayGenerator implements SpecGenerator {
+  readonly name = `replay of ${recorded.model}, recorded ${recorded.recordedAt?.slice(0, 10)}`;
+
+  async generate({ question, priorError }: GenInput): Promise<string> {
+    const outputs = byKey.get(key(question));
+    const out = outputs?.[priorError ? 1 : 0];
+    if (!out) throw new Error('no recorded output for this question and attempt');
+    return out;
+  }
+}
+
 export function getGenerator(): SpecGenerator {
   if (process.env.MOCK_LLM === '1' || process.env.MOCK_LLM === 'true') {
     return new MockGenerator();
   }
+  if (replayMode()) return new ReplayGenerator();
   return new MessagesApiGenerator();
 }

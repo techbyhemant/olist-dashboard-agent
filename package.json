@@ -9,7 +9,8 @@
     "lint": "eslint",
     "explore": "node scripts/explore.ts",
     "build:sample": "node scripts/build-sample.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "record": "RECORD_RUNS=1 vitest run evals/record.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

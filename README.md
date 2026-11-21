@@ -6,6 +6,12 @@ small closed set of tags, plus the DuckDB SQL behind each widget. Every tag,
 attribute and query is checked before anything renders, and a retry loop hands
 the exact error back to the model once before giving up.
 
+**Live demo: https://olist-dashboard-agent.vercel.app** Pick an example question,
+watch the validator log, then open "Show the model's HTML" to see exactly what the
+model wrote on each attempt, including any draft the validator rejected and why.
+The public demo replays real recorded model runs for the example questions, so it
+costs nothing to visit; the parsing, tag checks and SQL still run live on every click.
+
 ## 1. The problem
 
 Operators ask questions like *"which categories drive the most revenue?"* or
@@ -132,6 +138,7 @@ npm run build:sample     # regenerate data/sample/ from the full CSVs (committed
 npm run explore          # regenerate scripts/exploration.md from the CSVs
 npm run dev              # http://localhost:3051
 npm test                 # vitest: schema + DuckDB loop evals (MOCK_LLM, no spend)
+npm run record           # call the real model for the example questions → lib/recorded-runs.json
 ```
 
 Auth: the route calls the Anthropic Messages API (`@anthropic-ai/sdk`). Set a
@@ -147,8 +154,12 @@ Deploying (Vercel): runs as-is on the Node runtime — set `ANTHROPIC_API_KEY` a
 deploy. Since a public demo calls the model per request, the route is rate-limited
 (`RATE_LIMIT_PER_MIN` per IP + `DAILY_REQUEST_CAP` global, in `lib/rateLimit.ts`).
 Those are best-effort in-memory; set a **monthly budget limit on the API key in the
-Anthropic Console** as the hard spend ceiling. Or deploy with `MOCK_LLM=1` for a
-zero-spend demo.
+Anthropic Console** as the hard spend ceiling. Or deploy with `RECORDED_RUNS=1`
+for a zero-spend demo: the generator replays the model output saved by `npm run record`
+for the example questions, and the route turns away any other question with a note
+on how to run it yourself. Only the model's text is replayed; a recorded draft that
+broke the rules is rejected again by the live validator. `MOCK_LLM=1` is the
+deterministic stub the evals use.
 
 ## 3. Eval strategy
 

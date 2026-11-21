@@ -1,5 +1,6 @@
 import { streamDashboard, type StreamEvent } from '@/lib/generateDashboard';
 import { checkRateLimit, clientIp } from '@/lib/rateLimit';
+import { hasRecording, replayMode } from '@/lib/llm';
 
 export const runtime = 'nodejs'; // DuckDB native addon + Agent SDK subprocess
 export const dynamic = 'force-dynamic';
@@ -27,10 +28,22 @@ export async function POST(request: Request) {
     );
   }
 
-  // Rate limit before spending anything on the model. Skipped under MOCK_LLM
-  // (no spend to protect, keeps local/mock runs frictionless).
+  if (replayMode() && !hasRecording(question)) {
+    return Response.json(
+      {
+        ok: false,
+        error:
+          'This public demo replays real recorded model runs for the three example questions. ' +
+          'To ask your own, clone the repo and add an Anthropic API key.',
+      },
+      { status: 400 },
+    );
+  }
+
+  // Rate limit before spending anything on the model. Skipped for the mock and
+  // replay (no spend to protect, keeps local runs frictionless).
   const isMock = process.env.MOCK_LLM === '1' || process.env.MOCK_LLM === 'true';
-  if (!isMock) {
+  if (!isMock && !replayMode()) {
     const limit = checkRateLimit(clientIp(request));
     if (!limit.ok) {
       return Response.json(
@@ -53,7 +66,7 @@ export async function POST(request: Request) {
       } catch (e) {
         write(controller, {
           type: 'result',
-          result: { ok: false, error: `Server error: ${(e as Error).message}`, log: [], attempts: 0 },
+          result: { ok: false, error: `Server error: ${(e as Error).message}`, log: [], attempts: 0, drafts: [] },
         });
       } finally {
         controller.close();
